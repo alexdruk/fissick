@@ -15,11 +15,6 @@ const state = {
 };
 
 // ── View switching ─────────────────────────────────────────────────────────────
-// Simple: toggle the .active class. The CSS handles position/size via
-//   .view { position: absolute; inset: 0; display: none; }
-//   .view.active { display: block; }
-// #main has explicit top/left/right/bottom so inset:0 resolves to real pixels.
-
 function showView(name) {
   state.view = name;
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -100,6 +95,11 @@ async function startProcessing() {
   document.getElementById('results-stats-row').innerHTML = '';
   showTrialBanner(false);
 
+  // Hide Map tab — will re-appear if location data is found in this run
+  const mapTab = document.getElementById('tab-map');
+  if (mapTab) mapTab.style.display = 'none';
+  _showMapPanel(false);
+
   resetProcessingUI();
   showView('processing');
 
@@ -141,16 +141,23 @@ function handleProcessEvent(msg) {
   switch (msg.type) {
 
     case 'status': {
-      const badge = document.getElementById('phase-badge');
-      if (badge) {
-        badge.className = 'phase-badge ' + (msg.phase || 'processing');
-        badge.textContent = msg.phase || '';
-      }
-      const msgEl = document.getElementById('phase-message');
-      if (msgEl) msgEl.textContent = msg.message || '';
-      logMsg(msg.message, msg.phase === 'error' ? 'err' : 'ok');
+      // Location worker phases go to the log only — they must not overwrite
+      // the main photos progress badge or trigger the done/error navigation.
+      const isLocationPhase = msg.phase && msg.phase.startsWith('location-');
 
-      if (msg.phase === 'done' || msg.phase === 'error') {
+      if (!isLocationPhase) {
+        const badge = document.getElementById('phase-badge');
+        if (badge) {
+          badge.className = 'phase-badge ' + (msg.phase || 'processing');
+          badge.textContent = msg.phase || '';
+        }
+        const msgEl = document.getElementById('phase-message');
+        if (msgEl) msgEl.textContent = msg.message || '';
+      }
+
+      logMsg(msg.message, (msg.phase === 'error' || msg.phase === 'location-error') ? 'err' : 'ok');
+
+      if (!isLocationPhase && (msg.phase === 'done' || msg.phase === 'error')) {
         state.processing = false;
         if (msg.phase === 'done') {
           setTimeout(async () => {
@@ -169,10 +176,10 @@ function handleProcessEvent(msg) {
     case 'manifest': {
       const m = msg.manifest;
       const found = [];
-      if (m.photos)                     found.push('Photos ✓');
+      if (m.photos)                       found.push('Photos ✓');
       if (m.recordsJson || m.semanticDir) found.push('Location ✓');
-      if (m.mboxPath)                   found.push('Gmail ✓');
-      if (m.youtubeHtml)                found.push('YouTube ✓');
+      if (m.mboxPath)                     found.push('Gmail ✓');
+      if (m.youtubeHtml)                  found.push('YouTube ✓');
       logMsg('Detected: ' + (found.join(', ') || 'nothing'), found.length ? 'ok' : 'err');
       break;
     }
@@ -198,6 +205,22 @@ function handleProcessEvent(msg) {
       updateSidebarStats({ total: msg.processed, fixed: msg.fixed, unmatched: msg.failed });
       break;
 
+    // ── Location events ────────────────────────────────────────────────────
+    case 'location-progress':
+      // Could drive a second progress bar — for now just keep the log quiet
+      // (the status messages already log the phase transitions)
+      break;
+
+    case 'location-summary':
+      // Pass to the map module — this also reveals the Map tab
+      LocationMap.onLocationSummary(msg);
+      // Update sidebar Locations stat
+      if (msg.total > 0) {
+        const el = document.getElementById('sb-locations');
+        if (el) el.textContent = msg.total.toLocaleString();
+      }
+      break;
+
     case 'trial-limit-hit':
       handleTrialLimitHit();
       break;
@@ -219,11 +242,29 @@ async function loadResults() {
   state.offset = 0;
   state.filter = 'all';
   document.querySelectorAll('.filter-tab').forEach((t, i) => {
-    t.classList.toggle('active', i === 0);
+    // Keep the Map tab's display state; only reset the active class
+    if (t.dataset.filter !== 'map') t.classList.toggle('active', i === 0);
+    else t.classList.remove('active');
   });
+  // Make sure the first non-map tab is active
+  const firstTab = document.querySelector('.filter-tab:not([data-filter="map"])');
+  if (firstTab) firstTab.classList.add('active');
+
+  _showMapPanel(false); // always start on photo list
   await refreshLicenceStatus();
   await refreshStats();
   await loadPhotoPage(true);
+
+  // Load location stats to update sidebar and possibly reveal Map tab
+  try {
+    const locStats = await window.tt.getLocationStats();
+    if (locStats && locStats.total > 0) {
+      const el = document.getElementById('sb-locations');
+      if (el) el.textContent = locStats.total.toLocaleString();
+      const mapTab = document.getElementById('tab-map');
+      if (mapTab) mapTab.style.display = '';
+    }
+  } catch {}
 }
 
 async function refreshStats() {
@@ -231,7 +272,6 @@ async function refreshStats() {
   if (!stats) return;
   updateSidebarStats(stats);
 
-  // Show trial banner if any photos were held back by the trial limit
   const trialHit = !licenceStatus.licensed && stats.trial_limited > 0;
   showTrialBanner(trialHit);
 
@@ -324,20 +364,63 @@ document.getElementById('btn-back-results').addEventListener('click', async () =
   document.getElementById('manual-path-input').value = '';
   btnStart.style.display = 'none';
   updateSidebarStats({ total: 0, fixed: 0, unmatched: 0, with_gps: 0 });
+  _showMapPanel(false);
+  const mapTab = document.getElementById('tab-map');
+  if (mapTab) mapTab.style.display = 'none';
   showView('import');
 });
 
+// ── Filter tabs (including Map tab) ───────────────────────────────────────────
 document.querySelectorAll('.filter-tab').forEach(tab => {
   tab.addEventListener('click', async () => {
     document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
-    state.filter = tab.dataset.filter;
-    state.offset = 0;
-    await loadPhotoPage(true);
+
+    if (tab.dataset.filter === 'map') {
+      // Switch to map view
+      _showMapPanel(true);
+      LocationMap.onTabActivated();
+    } else {
+      // Switch back to photo list
+      _showMapPanel(false);
+      state.filter = tab.dataset.filter;
+      state.offset = 0;
+      await loadPhotoPage(true);
+    }
   });
 });
 
 document.getElementById('btn-load-more').addEventListener('click', () => loadPhotoPage(false));
+
+// ── Map panel show/hide ────────────────────────────────────────────────────────
+// Sizes the map panel to fill the space below the results-header and filter-bar.
+// Swaps overflow on view-results so the fixed-height map doesn't scroll.
+function _showMapPanel(show) {
+  const viewResults  = document.getElementById('view-results');
+  const photoList    = document.getElementById('photo-list');
+  const listFooter   = viewResults?.querySelector('.list-footer');
+  const trialBanner  = document.getElementById('trial-banner');
+  const mapPanel     = document.getElementById('map-panel');
+  if (!viewResults || !mapPanel) return;
+
+  if (show) {
+    if (photoList)   photoList.style.display   = 'none';
+    if (listFooter)  listFooter.style.display  = 'none';
+    if (trialBanner) trialBanner.style.display = 'none';
+    viewResults.style.overflow = 'hidden';
+
+    const usedH = (viewResults.querySelector('.results-header')?.offsetHeight || 0)
+                + (viewResults.querySelector('.filter-bar')?.offsetHeight || 0);
+    mapPanel.style.height = (viewResults.clientHeight - usedH) + 'px';
+    mapPanel.classList.add('visible');
+  } else {
+    mapPanel.classList.remove('visible');
+    viewResults.style.overflow = '';
+    if (photoList)   photoList.style.display   = '';
+    if (listFooter)  listFooter.style.display  = '';
+    // trial banner visibility is managed by showTrialBanner()
+  }
+}
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
 function updateSidebarStats({ total, fixed, unmatched, with_gps }) {
@@ -367,13 +450,10 @@ function showTrialBanner(show) {
   if (banner) banner.style.display = show ? 'block' : 'none';
 }
 
-// Trial limit hit during processing
 function handleTrialLimitHit() {
-  // Will be visible when results load
   showTrialBanner(true);
 }
 
-// Unlock button → open modal
 document.getElementById('btn-unlock').addEventListener('click', () => {
   openLicenceModal();
 });
@@ -403,8 +483,8 @@ document.getElementById('btn-modal-activate').addEventListener('click', async ()
   okEl.style.display  = 'none';
 
   if (!key) {
-    errEl.textContent    = 'Please enter your licence key.';
-    errEl.style.display  = 'block';
+    errEl.textContent   = 'Please enter your licence key.';
+    errEl.style.display = 'block';
     return;
   }
 
@@ -431,12 +511,10 @@ document.getElementById('btn-modal-activate').addEventListener('click', async ()
   }
 });
 
-// Close modal on backdrop click
 document.getElementById('licence-modal').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) closeLicenceModal();
 });
 
-// Close modal on Escape
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeLicenceModal();
 });

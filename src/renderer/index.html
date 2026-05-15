@@ -1,16 +1,19 @@
 <!DOCTYPE html>
-<!-- fissick-renderer v21 -->
+<!-- fissick-renderer v22 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'self' 'unsafe-inline' local: https://fonts.googleapis.com https://fonts.gstatic.com;
-           img-src 'self' local: data:;
+  content="default-src 'self' 'unsafe-inline' local: https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com;
+           img-src 'self' local: data: https://*.tile.openstreetmap.org;
            font-src 'self' https://fonts.gstatic.com;">
 <title>Fissick</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="anonymous"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="anonymous"/>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -124,6 +127,7 @@ html, body {
 .sb-stat-value  { font-family: var(--mono); font-size: 11px; color: var(--ink); }
 .sb-stat-value.green { color: var(--green); }
 .sb-stat-value.amber { color: var(--amber); }
+.sb-stat-value.blue  { color: var(--blue); }
 
 /* ════════════════════════════════════════
    IMPORT VIEW
@@ -167,12 +171,15 @@ html, body {
 
 .phase-row    { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
 .phase-badge  { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; border: 1px solid; }
-.phase-badge.extracting { background: var(--blue-lt);  color: var(--blue);  border-color: var(--blue-bdr); }
-.phase-badge.scanning   { background: var(--amber-lt); color: var(--amber); border-color: var(--amber-bdr); }
-.phase-badge.indexing   { background: var(--amber-lt); color: var(--amber); border-color: var(--amber-bdr); }
-.phase-badge.processing { background: var(--acc-lt);   color: var(--acc);   border-color: var(--acc-bdr); }
-.phase-badge.done       { background: var(--green-lt); color: var(--green); border-color: var(--green-bdr); }
-.phase-badge.error      { background: var(--red-lt);   color: var(--red);   border-color: var(--red-bdr); }
+.phase-badge.extracting      { background: var(--blue-lt);  color: var(--blue);  border-color: var(--blue-bdr); }
+.phase-badge.scanning        { background: var(--amber-lt); color: var(--amber); border-color: var(--amber-bdr); }
+.phase-badge.indexing        { background: var(--amber-lt); color: var(--amber); border-color: var(--amber-bdr); }
+.phase-badge.processing      { background: var(--acc-lt);   color: var(--acc);   border-color: var(--acc-bdr); }
+.phase-badge.done            { background: var(--green-lt); color: var(--green); border-color: var(--green-bdr); }
+.phase-badge.error           { background: var(--red-lt);   color: var(--red);   border-color: var(--red-bdr); }
+.phase-badge.location-parsing { background: var(--blue-lt); color: var(--blue);  border-color: var(--blue-bdr); }
+.phase-badge.location-done   { background: var(--green-lt); color: var(--green); border-color: var(--green-bdr); }
+.phase-badge.location-error  { background: var(--red-lt);   color: var(--red);   border-color: var(--red-bdr); }
 .phase-message { font-size: 13px; color: var(--mu); }
 
 .progress-wrap { background: var(--panel2); border-radius: 3px; height: 6px; overflow: hidden; margin-bottom: 8px; }
@@ -245,6 +252,80 @@ html, body {
 #btn-unlock:hover { background: #a04e24; }
 .trial-price { font-family: var(--mono); font-size: 11px; color: #6b6050; }
 
+/* ════════════════════════════════════════
+   MAP PANEL
+════════════════════════════════════════ */
+#map-panel {
+  display: none;
+  flex-direction: column;
+  /* height is set by JS when panel is shown */
+}
+#map-panel.visible {
+  display: flex;
+}
+
+#map-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--mu);
+  flex-shrink: 0;
+}
+#map-decimation-notice { color: var(--amber); display: none; }
+
+#map-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 18px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--mu);
+  flex-shrink: 0;
+}
+#map-filter-bar .map-filter-label {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--dim);
+}
+#map-filter-bar label {
+  display: flex; align-items: center; gap: 6px;
+}
+.map-date-input {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 3px; padding: 3px 6px; color: var(--ink);
+  outline: none;
+}
+.map-date-input:focus { border-color: var(--acc); }
+.map-btn-apply {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em;
+  text-transform: uppercase; background: var(--acc); color: #fff;
+  border: none; border-radius: 3px; padding: 4px 12px; cursor: pointer;
+}
+.map-btn-clear {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em;
+  text-transform: uppercase; background: var(--panel); color: var(--mu);
+  border: 1px solid var(--border); border-radius: 3px; padding: 4px 12px; cursor: pointer;
+}
+.map-btn-clear:hover { border-color: var(--border2); color: var(--ink); }
+
+#location-map {
+  flex: 1;
+  min-height: 0;
+  border: none;
+}
+
+/* Override Leaflet's default z-index so it stays below our modal */
+.leaflet-pane { z-index: 1; }
+.leaflet-top, .leaflet-bottom { z-index: 2; }
+
 /* ── Licence modal ── */
 #licence-modal {
   display: none;
@@ -273,7 +354,7 @@ html, body {
 .modal-btn-secondary { background: transparent; color: var(--mu); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 14px; font-size: 13px; cursor: pointer; }
 .modal-btn-primary:hover   { background: #2a2518; }
 .modal-btn-secondary:hover { border-color: var(--border2); color: var(--ink); }
-#licence-error { font-size: 12px; color: var(--red); margin-bottom: 10px; display: none; }
+#licence-error   { font-size: 12px; color: var(--red);   margin-bottom: 10px; display: none; }
 #licence-success { font-size: 12px; color: var(--green); margin-bottom: 10px; display: none; }
 
 ::-webkit-scrollbar       { width: 6px; height: 6px; }
@@ -287,7 +368,7 @@ html, body {
   <!-- Titlebar -->
   <div id="titlebar">
     <span class="tb-logo">Fissick<span class="tb-dot">.</span></span>
-    <span style="font-family:var(--mono);font-size:9px;color:var(--dim);margin-left:8px">v21</span>
+    <span style="font-family:var(--mono);font-size:9px;color:var(--dim);margin-left:8px">v22</span>
     <span class="tb-phase" id="tb-phase">Import</span>
   </div>
 
@@ -303,6 +384,7 @@ html, body {
     <div class="sb-stat-row"><span class="sb-stat-label">Fixed</span><span class="sb-stat-value green" id="sb-fixed">—</span></div>
     <div class="sb-stat-row"><span class="sb-stat-label">No sidecar</span><span class="sb-stat-value amber" id="sb-unmatched">—</span></div>
     <div class="sb-stat-row"><span class="sb-stat-label">With GPS</span><span class="sb-stat-value" id="sb-gps">—</span></div>
+    <div class="sb-stat-row"><span class="sb-stat-label">Locations</span><span class="sb-stat-value blue" id="sb-locations">—</span></div>
   </div>
 
   <!-- Main area: exactly fills the space right of sidebar, below titlebar -->
@@ -311,9 +393,9 @@ html, body {
     <!-- ══ IMPORT ══ -->
     <div class="view active" id="view-import">
       <div class="import-inner">
-        <div class="import-eyebrow">Module 1 · Photos</div>
+        <div class="import-eyebrow">Module 1 · Photos + Location</div>
         <div class="import-title">Fix your Google<br><i>Takeout archive</i></div>
-        <div class="import-sub">Restore dates and GPS to every photo and video — including the broken 2024 <code>supplemental-metadata.json</code> format.</div>
+        <div class="import-sub">Restore dates and GPS to every photo and video — including the broken 2024 <code>supplemental-metadata.json</code> format. Also rebuilds your location Timeline as an interactive map.</div>
 
         <div class="source-section">
           <div class="source-label">Option A — I have ZIP files</div>
@@ -394,18 +476,45 @@ html, body {
         </div>
       </div>
 
+      <!-- Filter / tab bar -->
       <div class="filter-bar">
         <div class="filter-tab active" data-filter="all">All</div>
         <div class="filter-tab" data-filter="fixed">EXIF Fixed</div>
         <div class="filter-tab" data-filter="unmatched">No Sidecar</div>
         <div class="filter-tab" data-filter="failed">No Date</div>
+        <!-- Map tab: hidden until location data is confirmed present -->
+        <div class="filter-tab" data-filter="map" id="tab-map" style="display:none">🗺 Map</div>
       </div>
+
+      <!-- Photo list (hidden when map tab is active) -->
       <div id="photo-list"></div>
       <div class="list-footer">
         <span id="list-count-label">—</span>
         <button id="btn-load-more" style="display:none">Load more</button>
       </div>
-    </div>
+
+      <!-- Map panel (shown only when map tab is active) -->
+      <div id="map-panel">
+
+        <div id="map-stats-bar">
+          <span id="map-point-count">—</span>
+          <span id="map-date-range">—</span>
+          <span id="map-decimation-notice">⚠ Large dataset — showing a representative sample</span>
+        </div>
+
+        <div id="map-filter-bar">
+          <span class="map-filter-label">Filter</span>
+          <label>From <input type="date" id="map-date-from" class="map-date-input"/></label>
+          <label>To   <input type="date" id="map-date-to"   class="map-date-input"/></label>
+          <button id="map-filter-apply" class="map-btn-apply">Apply</button>
+          <button id="map-filter-clear" class="map-btn-clear">Clear</button>
+        </div>
+
+        <div id="location-map"></div>
+
+      </div><!-- /map-panel -->
+
+    </div><!-- /view-results -->
 
   </div><!-- /main -->
 </div><!-- /app -->
@@ -425,6 +534,9 @@ html, body {
   </div>
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin="anonymous"></script>
+<script src="locationMap.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

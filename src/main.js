@@ -10,7 +10,13 @@ const fs = require('fs');
 
 let mainWindow;
 let db;
-let activeWorker = null;
+let activeWorker         = null; // photosWorker
+let activeLocationWorker = null; // locationWorker — spawned reactively from manifest event
+
+// Tracks whether both workers have finished so run_complete is only set once
+// both are truly done. Reset at the start of every process:start call.
+let workersDone          = { photos: false, location: false };
+let locationWorkerSpawned = false;
 
 // ── Protocol registration must happen before app.whenReady ───────────────────
 // Allows renderer to display local images via  local:///absolute/path/to/file.jpg
@@ -81,6 +87,20 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_photos_sidecar ON photos(sidecar_found);
     CREATE INDEX IF NOT EXISTS idx_photos_lat     ON photos(lat) WHERE lat IS NOT NULL;
 
+    CREATE TABLE IF NOT EXISTS locations (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      lat       REAL    NOT NULL,
+      lng       REAL    NOT NULL,
+      accuracy  INTEGER,
+      ts        INTEGER,           -- epoch ms
+      type      TEXT    DEFAULT 'point',  -- 'point' | 'visit'
+      name      TEXT,              -- populated for named place visits only
+      address   TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_locations_ts   ON locations(ts);
+    CREATE INDEX IF NOT EXISTS idx_locations_type ON locations(type);
+
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT
@@ -102,9 +122,65 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (db) db.close();
-  if (activeWorker) activeWorker.terminate();
+  if (activeWorker)         activeWorker.terminate();
+  if (activeLocationWorker) activeLocationWorker.terminate();
   app.quit();
 });
+
+// ── run_complete helper ───────────────────────────────────────────────────────
+// Only marks the run as complete once ALL spawned workers have sent their
+// done signal. If no location data was found, locationWorkerSpawned stays
+// false and we only wait for the photos worker.
+function checkAllDone() {
+  if (workersDone.photos && (!locationWorkerSpawned || workersDone.location)) {
+    db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_complete', '1')").run();
+  }
+}
+
+// ── Location worker spawner ───────────────────────────────────────────────────
+// Called from the photos worker's 'manifest' event handler, so we know the
+// ZIP extraction is complete and the paths are valid before we start.
+function spawnLocationWorker(recordsJson, semanticDir) {
+  locationWorkerSpawned = true;
+
+  const locWorkerPath = path.join(__dirname, 'processors', 'locationWorker.js');
+
+  activeLocationWorker = new Worker(locWorkerPath, {
+    workerData: {
+      dbPath:      db.name,
+      recordsJson: recordsJson || null,
+      semanticDir: semanticDir || null,
+    },
+  });
+
+  activeLocationWorker.on('message', (msg) => {
+    // Track completion — 'location-done' is sent at the end of the worker's
+    // finally block, guaranteeing it fires even if there was an error
+    if (msg.type === 'location-done') {
+      workersDone.location = true;
+      checkAllDone();
+    }
+
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('process:event', msg);
+    }
+  });
+
+  activeLocationWorker.on('error', (err) => {
+    console.error('[main] locationWorker error:', err);
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('process:event', {
+        type:    'status',
+        phase:   'location-error',
+        message: err.message,
+      });
+    }
+  });
+
+  activeLocationWorker.on('exit', () => {
+    activeLocationWorker = null;
+  });
+}
 
 // ── IPC Handlers ──────────────────────────────────────────────────────────────
 
@@ -136,9 +212,18 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
     activeWorker.terminate();
     activeWorker = null;
   }
+  if (activeLocationWorker) {
+    activeLocationWorker.terminate();
+    activeLocationWorker = null;
+  }
+
+  // Reset run state
+  workersDone           = { photos: false, location: false };
+  locationWorkerSpawned = false;
 
   // Wipe previous run's data and mark as incomplete
   db.exec('DELETE FROM photos');
+  db.exec('DELETE FROM locations');
   db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_complete', '0')").run();
 
   const workerPath = path.join(__dirname, 'processors', 'photosWorker.js');
@@ -182,10 +267,22 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
   });
 
   activeWorker.on('message', (msg) => {
-    // Mark run as complete when the worker signals done
-    if (msg.type === 'status' && msg.phase === 'done') {
-      db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_complete', '1')").run();
+    // When the photos worker has finished extracting and detecting schemas, it
+    // sends the manifest. Spawn the location worker at that point — the
+    // extracted folder exists and the paths are confirmed valid.
+    if (msg.type === 'manifest') {
+      const { manifest } = msg;
+      if (manifest.recordsJson || manifest.semanticDir) {
+        spawnLocationWorker(manifest.recordsJson, manifest.semanticDir);
+      }
     }
+
+    // Photos worker is done — check if everything is complete
+    if (msg.type === 'status' && msg.phase === 'done') {
+      workersDone.photos = true;
+      checkAllDone();
+    }
+
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('process:event', msg);
     }
@@ -213,14 +310,20 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
   return { started: true };
 });
 
-// Cancel a running job
+// Cancel a running job — terminates both workers
 ipcMain.handle('process:cancel', () => {
+  let cancelled = false;
   if (activeWorker) {
     activeWorker.terminate();
     activeWorker = null;
-    return { cancelled: true };
+    cancelled = true;
   }
-  return { cancelled: false };
+  if (activeLocationWorker) {
+    activeLocationWorker.terminate();
+    activeLocationWorker = null;
+    cancelled = true;
+  }
+  return { cancelled };
 });
 
 // Query photos with pagination and filtering
@@ -246,7 +349,7 @@ ipcMain.handle('db:get-photos', (_event, { offset = 0, limit = 60, filter = 'all
   return { photos, total };
 });
 
-// Aggregate stats for the dashboard
+// Aggregate stats for the photos dashboard
 ipcMain.handle('db:get-stats', () => {
   const row = db.prepare(`
     SELECT
@@ -263,6 +366,61 @@ ipcMain.handle('db:get-stats', () => {
   return row;
 });
 
+// Location stats — point count, date range, visit count
+ipcMain.handle('db:get-location-stats', () => {
+  const row = db.prepare(`
+    SELECT
+      COUNT(*)                                          AS total,
+      SUM(CASE WHEN type = 'visit' THEN 1 ELSE 0 END)  AS visits,
+      MIN(ts)                                           AS earliest_ts,
+      MAX(ts)                                           AS latest_ts
+    FROM locations
+  `).get();
+  return row;
+});
+
+// Fetch location points for the map renderer.
+//
+// Returns at most `limit` rows. When the dataset exceeds `limit`, raw 'point'
+// rows are decimated (every Nth row via id modulo) while 'visit' rows are
+// always returned in full — they are sparse and carry the place names.
+//
+// The renderer passes { minTs, maxTs } (epoch ms) when the user adjusts the
+// date range filter. Both are optional; omitting them returns the full dataset.
+ipcMain.handle('db:get-locations', (_event, { minTs, maxTs, limit = 50000 } = {}) => {
+  // Build WHERE clause for date range filter
+  const clauses = [];
+  const params  = {};
+  if (minTs != null) { clauses.push('ts >= @minTs'); params.minTs = minTs; }
+  if (maxTs != null) { clauses.push('ts <= @maxTs'); params.maxTs = maxTs; }
+  const baseWhere = clauses.length ? 'WHERE ' + clauses.join(' AND ') : '';
+
+  // Count matching rows so we can calculate the decimation step
+  const { n: total } = db.prepare(
+    `SELECT COUNT(*) as n FROM locations ${baseWhere}`
+  ).get(params);
+
+  // Decimate: if total > limit, take every floor(total/limit)th raw point row.
+  // Named visits are always included regardless of decimation.
+  const step = Math.max(1, Math.floor(total / limit));
+
+  // Build the final WHERE clause including the decimation filter
+  const allClauses = [...clauses];
+  if (step > 1) {
+    // Always include visit rows; decimate point rows
+    allClauses.push(`(type = 'visit' OR id % ${step} = 0)`);
+  }
+  const finalWhere = allClauses.length ? 'WHERE ' + allClauses.join(' AND ') : '';
+
+  const points = db.prepare(`
+    SELECT lat, lng, ts, type, name, address
+    FROM locations ${finalWhere}
+    ORDER BY ts ASC
+  `).all(params);
+
+  return { points, total, decimated: step > 1, step };
+});
+
 // Only show results on startup if the last run completed (not Ctrl+C interrupted)
 ipcMain.handle('db:has-data', () => {
   const photos = db.prepare('SELECT COUNT(*) as n FROM photos').get();
@@ -274,6 +432,7 @@ ipcMain.handle('db:has-data', () => {
 // Reset all data (for re-processing)
 ipcMain.handle('db:reset', () => {
   db.exec('DELETE FROM photos');
+  db.exec('DELETE FROM locations');
   return { ok: true };
 });
 
@@ -322,4 +481,3 @@ ipcMain.handle('licence:deactivate', () => {
   db.prepare("DELETE FROM settings WHERE key = 'licence_key'").run();
   return { ok: true };
 });
-

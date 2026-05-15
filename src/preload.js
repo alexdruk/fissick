@@ -11,14 +11,18 @@ contextBridge.exposeInMainWorld('tt', {
   selectFolder: () => ipcRenderer.invoke('dialog:select-folder'),
 
   // ── Processing ─────────────────────────────────────────────────────────────
-  startProcessing: (opts) => ipcRenderer.invoke('process:start', opts),
-  cancelProcessing: ()   => ipcRenderer.invoke('process:cancel'),
+  startProcessing:  (opts) => ipcRenderer.invoke('process:start', opts),
+  cancelProcessing: ()     => ipcRenderer.invoke('process:cancel'),
 
   // ── Database queries ───────────────────────────────────────────────────────
   getPhotos: (opts) => ipcRenderer.invoke('db:get-photos', opts),
   getStats:  ()     => ipcRenderer.invoke('db:get-stats'),
   hasData:   ()     => ipcRenderer.invoke('db:has-data'),
   resetData: ()     => ipcRenderer.invoke('db:reset'),
+
+  // ── Location (Module 2) ────────────────────────────────────────────────────
+  getLocationStats: ()     => ipcRenderer.invoke('db:get-location-stats'),
+  getLocations:     (opts) => ipcRenderer.invoke('db:get-locations', opts),
 
   // ── Event subscriptions ────────────────────────────────────────────────────
   // Returns an unsubscribe function — call it to clean up the listener.
@@ -29,8 +33,8 @@ contextBridge.exposeInMainWorld('tt', {
   },
 
   // ── Licence ────────────────────────────────────────────────────────────────
-  getLicenceStatus: ()      => ipcRenderer.invoke('licence:get-status'),
-  activateLicence:  (opts)  => ipcRenderer.invoke('licence:activate', opts),
+  getLicenceStatus:  ()     => ipcRenderer.invoke('licence:get-status'),
+  activateLicence:   (opts) => ipcRenderer.invoke('licence:activate', opts),
   deactivateLicence: ()     => ipcRenderer.invoke('licence:deactivate'),
 
 });
