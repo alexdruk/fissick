@@ -18,7 +18,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Generate .icns icon
         run: iconutil -c icns assets/icon.iconset -o assets/icon.icns
@@ -44,7 +44,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Generate Windows icon
         run: python3 scripts/make-ico.py
