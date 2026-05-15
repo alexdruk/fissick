@@ -24,7 +24,7 @@ jobs:
         run: iconutil -c icns assets/icon.iconset -o assets/icon.icns
 
       - name: Build DMG
-        run: npm run make -- --platform darwin
+        run: npm run make -- --platform darwin --arch x64
         env:
           NODE_ENV: production
 
