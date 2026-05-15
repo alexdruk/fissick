@@ -1,0 +1,61 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - 'v*'          # triggers on version tags: git tag v1.0.0 && git push --tags
+  workflow_dispatch:  # also allows manual trigger from GitHub UI
+
+jobs:
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate .icns icon
+        run: iconutil -c icns assets/icon.iconset -o assets/icon.icns
+
+      - name: Build DMG
+        run: npm run make -- --platform darwin
+        env:
+          NODE_ENV: production
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fissick-mac
+          path: out/make/**/*.dmg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Windows icon
+        run: python3 scripts/make-ico.py
+
+      - name: Build Windows installer
+        run: npm run make -- --platform win32
+        env:
+          NODE_ENV: production
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fissick-windows
+          path: out/make/**/*.exe

@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<!-- fissick-renderer v21 -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self' 'unsafe-inline' local: https://fonts.googleapis.com https://fonts.gstatic.com;
+           img-src 'self' local: data:;
+           font-src 'self' https://fonts.gstatic.com;">
+<title>Fissick</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #f5f2ec;
+  --panel:     #faf8f4;
+  --panel2:    #ede9e0;
+  --border:    #d5cfc2;
+  --border2:   #c0b9a8;
+  --ink:       #1c1a14;
+  --mu:        #6b6454;
+  --dim:       #a09880;
+  --acc:       #b85c2c;
+  --acc-lt:    #f5ede6;
+  --acc-bdr:   #e8c4aa;
+  --green:     #2a6b3c;
+  --green-lt:  #e8f4ec;
+  --green-bdr: #b0d8bc;
+  --amber:     #8a6010;
+  --amber-lt:  #fdf5e0;
+  --amber-bdr: #e8d080;
+  --red:       #952020;
+  --red-lt:    #fbeaea;
+  --red-bdr:   #e8a8a8;
+  --blue:      #1e4d7a;
+  --blue-lt:   #e6eff8;
+  --blue-bdr:  #a8c8e8;
+  --serif: 'DM Serif Display', Georgia, serif;
+  --mono:  'DM Mono', monospace;
+  --sans:  'DM Sans', system-ui, sans-serif;
+  --r:     6px;
+  --tb:    48px;   /* titlebar height */
+  --sb:    220px;  /* sidebar width */
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13.5px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* ── Absolute layout — no grid, no flex, no height:auto surprises ── */
+#app      { position: absolute; inset: 0; }
+
+#titlebar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: var(--tb);
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding-left: 76px;
+  padding-right: 16px;
+  -webkit-app-region: drag;
+  z-index: 10;
+}
+
+#sidebar {
+  position: absolute;
+  top: var(--tb); left: 0; bottom: 0;
+  width: var(--sb);
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+}
+
+#main {
+  position: absolute;
+  top: var(--tb);
+  left: var(--sb);
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Views fill #main exactly — guaranteed height = window - titlebar */
+.view {
+  display: none;
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.view.active { display: block; }
+
+/* ── Titlebar ── */
+.tb-logo  { font-family: var(--serif); font-size: 16px; color: var(--ink); letter-spacing: -.01em; -webkit-app-region: no-drag; }
+.tb-dot   { color: var(--acc); }
+.tb-phase { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .12em; text-transform: uppercase; margin-left: auto; }
+
+/* ── Sidebar ── */
+.sb-section { font-family: var(--mono); font-size: 8.5px; color: var(--dim); letter-spacing: .14em; text-transform: uppercase; padding: 10px 18px 4px; }
+.sb-item    { display: flex; align-items: center; gap: 8px; padding: 6px 18px; color: var(--mu); font-size: 12.5px; cursor: default; border-left: 2px solid transparent; }
+.sb-item:hover  { color: var(--ink); background: var(--panel2); }
+.sb-item.active { color: var(--acc); background: var(--acc-lt); border-left-color: var(--acc); font-weight: 500; }
+.sb-divider     { height: 1px; background: var(--border); margin: 6px 0; }
+.sb-stat-row    { padding: 5px 18px; display: flex; justify-content: space-between; align-items: center; }
+.sb-stat-label  { font-family: var(--mono); font-size: 9px; color: var(--dim); }
+.sb-stat-value  { font-family: var(--mono); font-size: 11px; color: var(--ink); }
+.sb-stat-value.green { color: var(--green); }
+.sb-stat-value.amber { color: var(--amber); }
+
+/* ════════════════════════════════════════
+   IMPORT VIEW
+════════════════════════════════════════ */
+#view-import { padding: 40px; }
+.import-inner { max-width: 560px; margin: 0 auto; }
+
+.import-eyebrow { font-family: var(--mono); font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--acc); margin-bottom: 10px; }
+.import-title   { font-family: var(--serif); font-size: 32px; color: var(--ink); margin-bottom: 8px; line-height: 1.15; }
+.import-title i { color: var(--acc); font-style: italic; }
+.import-sub     { font-size: 13.5px; color: var(--mu); font-weight: 300; line-height: 1.7; margin-bottom: 28px; }
+
+.source-section  { margin-bottom: 6px; }
+.source-label    { font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); margin-bottom: 7px; }
+.source-divider  { font-family: var(--mono); font-size: 10px; color: var(--dim); text-align: center; padding: 10px 0; position: relative; }
+.source-divider::before, .source-divider::after { content: ''; position: absolute; top: 50%; width: calc(50% - 20px); height: 1px; background: var(--border); }
+.source-divider::before { left: 0; }
+.source-divider::after  { right: 0; }
+.source-feedback       { margin-top: 7px; font-family: var(--mono); font-size: 10px; color: var(--green); line-height: 1.6; }
+.source-feedback.error { color: var(--red); }
+
+.source-btn { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 14px; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 10px; width: 100%; transition: border-color .12s, background .12s; margin-bottom: 8px; }
+.source-btn:hover { border-color: var(--acc-bdr); background: var(--acc-lt); }
+.source-btn .s-icon { font-size: 18px; }
+.source-btn .s-text strong { display: block; font-size: 12.5px; color: var(--ink); font-weight: 500; }
+.source-btn .s-text span   { font-size: 11px; color: var(--dim); }
+
+#btn-start { width: 100%; background: var(--ink); color: #f5f0e8; border: none; border-radius: var(--r); padding: 13px 20px; font-family: var(--serif); font-size: 16px; cursor: pointer; letter-spacing: .01em; display: none; margin-top: 8px; }
+#btn-start:hover { background: #2a2518; }
+
+/* ════════════════════════════════════════
+   PROCESSING VIEW
+════════════════════════════════════════ */
+#view-processing { padding: 28px 48px 40px; }
+
+.back-btn { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--mu); background: transparent; border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; cursor: pointer; display: inline-block; margin-bottom: 20px; }
+.back-btn:hover { border-color: var(--border2); color: var(--ink); }
+
+.proc-title { font-family: var(--serif); font-size: 26px; color: var(--ink); margin-bottom: 4px; }
+.proc-sub   { font-size: 12.5px; color: var(--mu); margin-bottom: 24px; }
+
+.phase-row    { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
+.phase-badge  { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; border: 1px solid; }
+.phase-badge.extracting { background: var(--blue-lt);  color: var(--blue);  border-color: var(--blue-bdr); }
+.phase-badge.scanning   { background: var(--amber-lt); color: var(--amber); border-color: var(--amber-bdr); }
+.phase-badge.indexing   { background: var(--amber-lt); color: var(--amber); border-color: var(--amber-bdr); }
+.phase-badge.processing { background: var(--acc-lt);   color: var(--acc);   border-color: var(--acc-bdr); }
+.phase-badge.done       { background: var(--green-lt); color: var(--green); border-color: var(--green-bdr); }
+.phase-badge.error      { background: var(--red-lt);   color: var(--red);   border-color: var(--red-bdr); }
+.phase-message { font-size: 13px; color: var(--mu); }
+
+.progress-wrap { background: var(--panel2); border-radius: 3px; height: 6px; overflow: hidden; margin-bottom: 8px; }
+.progress-bar  { height: 100%; background: var(--acc); border-radius: 3px; width: 0%; transition: width .3s; }
+.progress-label { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--dim); margin-bottom: 20px; }
+
+.live-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }
+.live-stat  { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r); padding: 14px 16px; }
+.live-stat-val   { font-family: var(--serif); font-size: 28px; color: var(--ink); line-height: 1; margin-bottom: 3px; }
+.live-stat-val.green { color: var(--green); }
+.live-stat-val.amber { color: var(--amber); }
+.live-stat-label { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+
+.log-section { background: var(--ink); border-radius: var(--r); overflow: hidden; }
+.log-header  { background: #2a2720; border-bottom: 1px solid #3a3528; padding: 7px 14px; }
+.log-title   { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+#log-output  { font-family: var(--mono); font-size: 10.5px; color: #9a9080; padding: 12px 16px; height: 160px; overflow-y: auto; line-height: 1.8; user-select: text; }
+.log-ok  { color: #7ec87e; }
+.log-err { color: #e08080; }
+.log-dim { color: #5a5448; }
+
+/* ════════════════════════════════════════
+   RESULTS VIEW
+════════════════════════════════════════ */
+.results-header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 22px 36px 18px; }
+.results-title  { font-family: var(--serif); font-size: 24px; color: var(--ink); margin-bottom: 12px; }
+.results-stats  { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.stat-pill       { display: flex; align-items: center; gap: 7px; background: var(--panel2); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; font-size: 12px; color: var(--mu); }
+.stat-pill .sp-val { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--ink); }
+.stat-pill.green   { background: var(--green-lt); border-color: var(--green-bdr); }
+.stat-pill.green .sp-val { color: var(--green); }
+.stat-pill.amber   { background: var(--amber-lt); border-color: var(--amber-bdr); }
+.stat-pill.amber .sp-val { color: var(--amber); }
+
+.filter-bar { display: flex; border-bottom: 1px solid var(--border); padding: 0 36px; background: var(--panel); }
+.filter-tab { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.filter-tab:hover  { color: var(--mu); }
+.filter-tab.active { color: var(--acc); border-bottom-color: var(--acc); }
+
+.photo-row { display: grid; grid-template-columns: 48px 1fr auto auto auto; align-items: center; gap: 12px; padding: 8px 36px; border-bottom: 1px solid var(--border); }
+.photo-row:hover { background: var(--panel); }
+.photo-thumb { width: 48px; height: 36px; border-radius: 3px; object-fit: cover; background: var(--panel2); display: block; flex-shrink: 0; }
+.photo-thumb-placeholder { width: 48px; height: 36px; border-radius: 3px; background: var(--panel2); display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.photo-info .photo-name  { font-size: 12.5px; color: var(--ink); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px; }
+.photo-info .photo-meta  { font-family: var(--mono); font-size: 9.5px; color: var(--dim); }
+
+.tag        { font-family: var(--mono); font-size: 9px; font-weight: 500; padding: 3px 7px; border-radius: 3px; white-space: nowrap; }
+.tag-fixed  { background: var(--green-lt); color: var(--green); }
+.tag-fname  { background: var(--amber-lt); color: var(--amber); }
+.tag-none   { background: var(--red-lt);   color: var(--red); }
+.tag-gps    { background: var(--blue-lt);  color: var(--blue); }
+
+.list-footer { padding: 14px 36px; font-size: 12px; color: var(--dim); display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); }
+#btn-load-more { font-family: var(--mono); font-size: 10px; color: var(--acc); background: transparent; border: 1px solid var(--acc-bdr); border-radius: 20px; padding: 5px 14px; cursor: pointer; }
+
+/* ── Trial banner ── */
+#trial-banner {
+  display: none;
+  background: linear-gradient(135deg, #1c1a14 0%, #2a2518 100%);
+  border-radius: var(--r);
+  padding: 18px 22px;
+  margin: 16px 36px;
+  border: 1px solid #3a3420;
+}
+#trial-banner h3 { font-family: var(--serif); font-size: 18px; color: #f5f0e8; margin-bottom: 6px; }
+#trial-banner p  { font-size: 12.5px; color: #9a9080; line-height: 1.6; margin-bottom: 14px; }
+#trial-banner .trial-actions { display: flex; gap: 8px; align-items: center; }
+#btn-unlock { background: var(--acc); color: #fff; border: none; border-radius: var(--r); padding: 9px 18px; font-family: var(--serif); font-size: 15px; cursor: pointer; }
+#btn-unlock:hover { background: #a04e24; }
+.trial-price { font-family: var(--mono); font-size: 11px; color: #6b6050; }
+
+/* ── Licence modal ── */
+#licence-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(28,26,20,.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+#licence-modal.open { display: flex; }
+.modal-box {
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 28px 32px;
+  width: 440px;
+  max-width: 90vw;
+}
+.modal-box h2 { font-family: var(--serif); font-size: 22px; color: var(--ink); margin-bottom: 6px; }
+.modal-box p  { font-size: 13px; color: var(--mu); line-height: 1.6; margin-bottom: 18px; }
+.modal-input  { width: 100%; font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--border2); border-radius: 4px; padding: 9px 12px; color: var(--ink); outline: none; margin-bottom: 10px; }
+.modal-input:focus { border-color: var(--acc); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.modal-btn-primary   { background: var(--ink); color: #f5f0e8; border: none; border-radius: var(--r); padding: 8px 18px; font-size: 13px; cursor: pointer; }
+.modal-btn-secondary { background: transparent; color: var(--mu); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 14px; font-size: 13px; cursor: pointer; }
+.modal-btn-primary:hover   { background: #2a2518; }
+.modal-btn-secondary:hover { border-color: var(--border2); color: var(--ink); }
+#licence-error { font-size: 12px; color: var(--red); margin-bottom: 10px; display: none; }
+#licence-success { font-size: 12px; color: var(--green); margin-bottom: 10px; display: none; }
+
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Titlebar -->
+  <div id="titlebar">
+    <span class="tb-logo">Fissick<span class="tb-dot">.</span></span>
+    <span style="font-family:var(--mono);font-size:9px;color:var(--dim);margin-left:8px">v21</span>
+    <span class="tb-phase" id="tb-phase">Import</span>
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sb-section">Workflow</div>
+    <div class="sb-item active" id="sb-import"><span>📦</span> Import</div>
+    <div class="sb-item" id="sb-process"><span>⚙️</span> Process</div>
+    <div class="sb-item" id="sb-results"><span>✅</span> Results</div>
+    <div class="sb-divider"></div>
+    <div class="sb-section">Last Run</div>
+    <div class="sb-stat-row"><span class="sb-stat-label">Total</span><span class="sb-stat-value" id="sb-total">—</span></div>
+    <div class="sb-stat-row"><span class="sb-stat-label">Fixed</span><span class="sb-stat-value green" id="sb-fixed">—</span></div>
+    <div class="sb-stat-row"><span class="sb-stat-label">No sidecar</span><span class="sb-stat-value amber" id="sb-unmatched">—</span></div>
+    <div class="sb-stat-row"><span class="sb-stat-label">With GPS</span><span class="sb-stat-value" id="sb-gps">—</span></div>
+  </div>
+
+  <!-- Main area: exactly fills the space right of sidebar, below titlebar -->
+  <div id="main">
+
+    <!-- ══ IMPORT ══ -->
+    <div class="view active" id="view-import">
+      <div class="import-inner">
+        <div class="import-eyebrow">Module 1 · Photos</div>
+        <div class="import-title">Fix your Google<br><i>Takeout archive</i></div>
+        <div class="import-sub">Restore dates and GPS to every photo and video — including the broken 2024 <code>supplemental-metadata.json</code> format.</div>
+
+        <div class="source-section">
+          <div class="source-label">Option A — I have ZIP files</div>
+          <button class="source-btn" id="btn-select-zips">
+            <span class="s-icon">🗜️</span>
+            <span class="s-text"><strong>Select ZIP files</strong><span>takeout-…-001.zip, -002.zip, etc.</span></span>
+          </button>
+          <div id="zip-feedback" class="source-feedback" style="display:none"></div>
+        </div>
+
+        <div class="source-divider">or</div>
+
+        <div class="source-section">
+          <div class="source-label">Option B — Already extracted</div>
+          <button class="source-btn" id="btn-select-folder">
+            <span class="s-icon">📁</span>
+            <span class="s-text"><strong>Select folder</strong><span>The folder containing "Google Photos"</span></span>
+          </button>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input id="manual-path-input" type="text" placeholder="or paste path: /Users/alex/Documents/fake-takeout"
+              style="flex:1;font-family:var(--mono);font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:7px 10px;color:var(--ink);outline:none">
+            <button id="btn-manual-path" style="font-family:var(--mono);font-size:10px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;padding:7px 12px;cursor:pointer;white-space:nowrap;color:var(--ink)">Use path</button>
+          </div>
+          <div id="folder-feedback" class="source-feedback" style="display:none"></div>
+        </div>
+
+        <button id="btn-start">Start processing →</button>
+      </div>
+    </div>
+
+    <!-- ══ PROCESSING ══ -->
+    <div class="view" id="view-processing">
+      <button class="back-btn" id="btn-back-processing">← Back</button>
+      <div class="proc-title">Processing your archive</div>
+      <div class="proc-sub">You can minimise this window — processing continues in the background.</div>
+
+      <div class="phase-row">
+        <span class="phase-badge processing" id="phase-badge">Processing</span>
+        <span class="phase-message" id="phase-message">Starting…</span>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+      <div class="progress-label">
+        <span id="progress-text">—</span>
+        <span id="progress-eta"></span>
+      </div>
+
+      <div class="live-stats">
+        <div class="live-stat"><div class="live-stat-val" id="stat-processed">0</div><div class="live-stat-label">Processed</div></div>
+        <div class="live-stat"><div class="live-stat-val green" id="stat-fixed">0</div><div class="live-stat-label">EXIF Fixed</div></div>
+        <div class="live-stat"><div class="live-stat-val" id="stat-matched">0</div><div class="live-stat-label">Sidecar Found</div></div>
+        <div class="live-stat"><div class="live-stat-val amber" id="stat-failed">0</div><div class="live-stat-label">No Sidecar</div></div>
+      </div>
+
+      <div class="log-section">
+        <div class="log-header"><span class="log-title">Activity log</span></div>
+        <div id="log-output"></div>
+      </div>
+    </div>
+
+    <!-- ══ RESULTS ══ -->
+    <div class="view" id="view-results">
+      <div class="results-header">
+        <button class="back-btn" id="btn-back-results">← Back</button>
+        <div class="results-title">Processing complete</div>
+        <div class="results-stats" id="results-stats-row"></div>
+      </div>
+
+      <!-- Trial limit banner — shown only in trial mode -->
+      <div id="trial-banner">
+        <h3>100 photos fixed — full archive indexed</h3>
+        <p>The free trial fixes the first 100 photos. Your remaining photos were matched and indexed — unlock to write EXIF to all of them without re-importing.</p>
+        <div class="trial-actions">
+          <button id="btn-unlock">Unlock full version — $29</button>
+          <span class="trial-price">One-time · Mac + Windows · all future updates</span>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-tab active" data-filter="all">All</div>
+        <div class="filter-tab" data-filter="fixed">EXIF Fixed</div>
+        <div class="filter-tab" data-filter="unmatched">No Sidecar</div>
+        <div class="filter-tab" data-filter="failed">No Date</div>
+      </div>
+      <div id="photo-list"></div>
+      <div class="list-footer">
+        <span id="list-count-label">—</span>
+        <button id="btn-load-more" style="display:none">Load more</button>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- Licence activation modal -->
+<div id="licence-modal">
+  <div class="modal-box">
+    <h2>Activate Fissick</h2>
+    <p>Enter your licence key from Gumroad. One key activates on up to 2 machines.</p>
+    <div id="licence-error"></div>
+    <div id="licence-success"></div>
+    <input id="licence-key-input" class="modal-input" type="text" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" spellcheck="false" autocomplete="off">
+    <div class="modal-actions">
+      <button class="modal-btn-secondary" id="btn-modal-cancel">Cancel</button>
+      <button class="modal-btn-primary" id="btn-modal-activate">Activate</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

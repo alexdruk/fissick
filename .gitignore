@@ -1,0 +1,8 @@
+node_modules/
+out/
+fissick-extracted-*/
+fake-takeout/
+*.db
+.DS_Store
+assets/icon.icns
+assets/icon.ico
