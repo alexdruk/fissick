@@ -47,6 +47,8 @@ module.exports = {
         name:            'Fissick',
         setupExe:        'FissickSetup.exe',
         setupIcon:       'assets/icon.ico',
+        authors:         'Alex Druk',
+        description:     'Fix Google Takeout photo metadata'
         // Add certificateFile + certificatePassword here when you have a cert
       },
     },
