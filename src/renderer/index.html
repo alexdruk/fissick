@@ -595,16 +595,20 @@ html, body {
       <!-- Export toolbar -->
       <div id="export-bar">
         <span class="export-label">Export</span>
-        <button class="export-btn" id="btn-export-gpx" style="display:none">
+        <button class="export-btn" id="btn-export-gpx" style="display:none"
+                title="Export your location history as a GPX file — opens in Google Maps, Apple Maps, Garmin and most mapping apps">
           <span class="eb-icon">🗺</span> Location GPX
         </button>
-        <button class="export-btn" id="btn-export-map-html" style="display:none">
+        <button class="export-btn" id="btn-export-map-html" style="display:none"
+                title="Save your location history as a self-contained web page — open it in any browser, share it with anyone, no app needed">
           <span class="eb-icon">🌐</span> Interactive Map
         </button>
-        <button class="export-btn" id="btn-export-csv">
+        <button class="export-btn" id="btn-export-csv"
+                title="Export the selected photos as a spreadsheet — includes filename, date, GPS coordinates and fix status">
           <span class="eb-icon">📋</span> Photos CSV
         </button>
-        <button class="export-btn" id="btn-export-copy">
+        <button class="export-btn" id="btn-export-copy"
+                title="Copy the selected photos to a folder of your choice, with their dates and GPS already written in">
           <span class="eb-icon">📂</span> Copy Fixed Files
         </button>
         <!-- Inline progress for copy operation -->
@@ -628,10 +632,14 @@ html, body {
 
       <!-- Filter / tab bar -->
       <div class="filter-bar">
-        <div class="filter-tab active" data-filter="all">All</div>
-        <div class="filter-tab" data-filter="fixed">EXIF Fixed</div>
-        <div class="filter-tab" data-filter="unmatched">No Sidecar</div>
-        <div class="filter-tab" data-filter="failed">No Date</div>
+        <div class="filter-tab active" data-filter="all"
+             title="Show all photos from your archive">All</div>
+        <div class="filter-tab" data-filter="fixed"
+             title="Photos where the date (and GPS if available) were successfully written into the file — these are fully fixed">EXIF Fixed</div>
+        <div class="filter-tab" data-filter="unmatched"
+             title="Photos with no matching Google metadata file — they may still have a date from the filename, but no GPS">No Sidecar</div>
+        <div class="filter-tab" data-filter="failed"
+             title="Photos where no date could be found at all — they will appear undated in your library">No Date</div>
         <!-- Map tab: hidden until location data is confirmed present -->
         <div class="filter-tab" data-filter="map" id="tab-map" style="display:none">🗺 Map</div>
       </div>

@@ -374,10 +374,22 @@ function renderPhotoRow(photo) {
     : '—';
 
   const tag = photo.exif_written
-    ? `<span class="tag ${photo.date_source === 'filename' ? 'tag-fname' : 'tag-fixed'}">${photo.date_source === 'filename' ? 'Filename date' : 'EXIF fixed'}</span>`
-    : `<span class="tag tag-none">No date</span>`;
+    ? (photo.date_source === 'filename'
+        ? `<span class="tag tag-fname" title="No metadata file found — the date was read from the filename and written into the photo">Filename date</span>`
+        : `<span class="tag tag-fixed" title="Date and location were written directly into the photo file — apps like Photos, Lightroom and Google Photos will now read them correctly">EXIF fixed</span>`)
+    : `<span class="tag tag-none" title="No date could be found for this photo — neither from a metadata file nor the filename. The photo will appear undated in your library.">No date</span>`;
 
-  const gps = photo.lat != null ? `<span class="tag tag-gps">GPS</span>` : `<span></span>`;
+  const gps = photo.lat != null
+    ? `<span class="tag tag-gps" title="GPS coordinates are embedded in this photo — it will appear on a map in Photos, Google Photos and other apps">GPS</span>`
+    : `<span></span>`;
+
+  const sourceTips = {
+    'sidecar':  'Date came from a Google metadata file (.json) exported alongside this photo',
+    'filename': 'Date was read from the filename — e.g. IMG_20230601_143022.jpg',
+    'none':     'No date source found',
+  };
+  const sourceLabel = { 'sidecar': 'sidecar', 'filename': 'filename', 'none': 'no source' }[photo.date_source] || (photo.date_source || '—');
+  const sourceTip   = sourceTips[photo.date_source] || '';
 
   // Build the row: checkbox + thumb + info + tags
   const inner = document.createElement('div');
@@ -389,7 +401,7 @@ function renderPhotoRow(photo) {
       <div class="photo-meta">${dateStr}${photo.lat != null ? ` · ${photo.lat.toFixed(4)}, ${photo.lng.toFixed(4)}` : ''}</div>
     </div>
     ${tag}${gps}
-    <span style="font-family:var(--mono);font-size:9px;color:var(--dim)">${photo.date_source || '—'}</span>
+    <span style="font-family:var(--mono);font-size:9px;color:var(--dim)" title="${sourceTip}">${sourceLabel}</span>
   `;
 
   row.appendChild(cb);
