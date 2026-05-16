@@ -58,6 +58,42 @@ async function walkPhotosDirectory(photosDir) {
   return { mediaFiles, jsonFiles };
 }
 
+// ── Media-only walker (for non-Google-Photos Takeout parts) ──────────────────
+// Walks `rootDir` recursively, collecting media files.
+// Skips `excludeDir` subtree entirely (avoids re-walking Google Photos).
+// Does NOT collect JSON files — sidecar matching doesn't apply outside
+// the Google Photos folder structure.
+
+async function walkForMediaOnly(rootDir, excludeDir) {
+  const mediaFiles = [];
+  // Normalise excludeDir for reliable prefix matching
+  const excludeNorm = excludeDir ? path.normalize(excludeDir) + path.sep : null;
+
+  async function walk(dir) {
+    // Skip the excluded subtree
+    if (excludeNorm && (path.normalize(dir) + path.sep).startsWith(excludeNorm)) return;
+
+    let dirHandle;
+    try {
+      dirHandle = await fs.promises.opendir(dir);
+    } catch {
+      return;
+    }
+    for await (const entry of dirHandle) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (MEDIA_EXTENSIONS.has(ext)) mediaFiles.push(fullPath);
+      }
+    }
+  }
+
+  await walk(rootDir);
+  return mediaFiles;
+}
+
 // ── Dual JSON index ───────────────────────────────────────────────────────────
 
 function buildJsonIndex(jsonFiles) {
@@ -199,6 +235,7 @@ function deduplicateMedia(mediaFiles) {
 
 module.exports = {
   walkPhotosDirectory,
+  walkForMediaOnly,
   buildJsonIndex,
   findSidecar,
   dateFromFilename,

@@ -15,10 +15,11 @@ contextBridge.exposeInMainWorld('tt', {
   cancelProcessing: ()     => ipcRenderer.invoke('process:cancel'),
 
   // ── Database queries ───────────────────────────────────────────────────────
-  getPhotos: (opts) => ipcRenderer.invoke('db:get-photos', opts),
-  getStats:  ()     => ipcRenderer.invoke('db:get-stats'),
-  hasData:   ()     => ipcRenderer.invoke('db:has-data'),
-  resetData: ()     => ipcRenderer.invoke('db:reset'),
+  getPhotos:        (opts) => ipcRenderer.invoke('db:get-photos', opts),
+  getStats:         ()     => ipcRenderer.invoke('db:get-stats'),
+  getPhotoPaths:    (opts) => ipcRenderer.invoke('db:get-photo-paths', opts),
+  hasData:          ()     => ipcRenderer.invoke('db:has-data'),
+  resetData:        ()     => ipcRenderer.invoke('db:reset'),
 
   // ── Location (Module 2) ────────────────────────────────────────────────────
   getLocationStats: ()     => ipcRenderer.invoke('db:get-location-stats'),
@@ -34,8 +35,8 @@ contextBridge.exposeInMainWorld('tt', {
 
   // ── Exports ────────────────────────────────────────────────────────────────
   exportGpx:        ()     => ipcRenderer.invoke('export:gpx'),
-  exportPhotosCsv:  ()     => ipcRenderer.invoke('export:photos-csv'),
-  exportCopyFixed:  ()     => ipcRenderer.invoke('export:copy-fixed'),
+  exportPhotosCsv:  (opts) => ipcRenderer.invoke('export:photos-csv', opts),
+  exportCopyFixed:  (opts) => ipcRenderer.invoke('export:copy-fixed', opts),
   exportMapHtml:    ()     => ipcRenderer.invoke('export:map-html'),
 
   onCopyProgress: (cb) => {

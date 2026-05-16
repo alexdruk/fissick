@@ -12,6 +12,10 @@ const state = {
   filter:      'all',
   offset:      0,
   limit:       60,
+  // ── Selection ──────────────────────────────────────────────────────────────
+  // selectedPaths: Set of file_path strings. Lives in memory, not in the DOM.
+  // Updated by checkbox clicks, filter-tab bulk selection, and select-all.
+  selectedPaths: new Set(),
 };
 
 // ── View switching ─────────────────────────────────────────────────────────────
@@ -251,9 +255,12 @@ async function loadResults() {
   if (firstTab) firstTab.classList.add('active');
 
   _showMapPanel(false); // always start on photo list
+  state.selectedPaths.clear();
+  state.filteredTotal = 0;
   await refreshLicenceStatus();
   await refreshStats();
   await loadPhotoPage(true);
+  _updateSelectionUI();
 
   // Load location stats to update sidebar, reveal Map tab, and show/hide location exports
   try {
@@ -318,6 +325,7 @@ async function loadPhotoPage(replace = false) {
     });
 
     const shown = state.offset + photos.length;
+    state.filteredTotal = total; // used by _updateSelectionUI for indeterminate state
     const cl = document.getElementById('list-count-label');
     if (cl) cl.textContent = `Showing ${shown.toLocaleString()} of ${total.toLocaleString()}`;
 
@@ -334,6 +342,24 @@ async function loadPhotoPage(replace = false) {
 function renderPhotoRow(photo) {
   const row = document.createElement('div');
   row.className = 'photo-row';
+
+  // Checkbox
+  const cb = document.createElement('div');
+  cb.className = 'photo-cb';
+  cb.role = 'checkbox';
+  if (state.selectedPaths.has(photo.file_path)) cb.classList.add('checked');
+
+  // Toggle on row click (anywhere except the tags)
+  row.addEventListener('click', () => {
+    if (state.selectedPaths.has(photo.file_path)) {
+      state.selectedPaths.delete(photo.file_path);
+      cb.classList.remove('checked');
+    } else {
+      state.selectedPaths.add(photo.file_path);
+      cb.classList.add('checked');
+    }
+    _updateSelectionUI();
+  });
 
   const ext = (photo.filename.split('.').pop() || '').toLowerCase();
   const isImage = ['jpg','jpeg','png','gif','webp','heic','heif','bmp'].includes(ext);
@@ -353,7 +379,10 @@ function renderPhotoRow(photo) {
 
   const gps = photo.lat != null ? `<span class="tag tag-gps">GPS</span>` : `<span></span>`;
 
-  row.innerHTML = `
+  // Build the row: checkbox + thumb + info + tags
+  const inner = document.createElement('div');
+  inner.style.cssText = 'display:contents';
+  inner.innerHTML = `
     ${thumb}
     <div class="photo-info">
       <div class="photo-name" title="${photo.filename}">${photo.filename}</div>
@@ -362,6 +391,9 @@ function renderPhotoRow(photo) {
     ${tag}${gps}
     <span style="font-family:var(--mono);font-size:9px;color:var(--dim)">${photo.date_source || '—'}</span>
   `;
+
+  row.appendChild(cb);
+  row.appendChild(inner);
   return row;
 }
 
@@ -386,20 +418,88 @@ document.querySelectorAll('.filter-tab').forEach(tab => {
     tab.classList.add('active');
 
     if (tab.dataset.filter === 'map') {
-      // Switch to map view
       _showMapPanel(true);
       LocationMap.onTabActivated();
     } else {
-      // Switch back to photo list
       _showMapPanel(false);
-      state.filter = tab.dataset.filter;
+      const newFilter = tab.dataset.filter;
+
+      // ── Clear selection on every tab switch ─────────────────────────────
+      state.selectedPaths.clear();
+
+      // If a specific filter tab (not ALL), bulk-select all paths for that filter
+      if (newFilter !== 'all') {
+        const paths = await window.tt.getPhotoPaths({ filter: newFilter });
+        paths.forEach(p => state.selectedPaths.add(p));
+      }
+
+      state.filter = newFilter;
       state.offset = 0;
       await loadPhotoPage(true);
+      _updateSelectionUI();
     }
   });
 });
 
 document.getElementById('btn-load-more').addEventListener('click', () => loadPhotoPage(false));
+
+// ── Selection UI ───────────────────────────────────────────────────────────────
+
+// Updates the select-all checkbox state and "N selected" label.
+// Also enables/disables the photo export buttons.
+function _updateSelectionUI() {
+  const n        = state.selectedPaths.size;
+  const selCount = document.getElementById('sel-count');
+  if (selCount) selCount.textContent = n.toLocaleString();
+
+  // Select-all checkbox: checked / indeterminate / unchecked
+  // We compare against the current visible total from the list footer
+  const allCb = document.getElementById('select-all-cb');
+  if (allCb) {
+    allCb.classList.remove('checked', 'indeterminate');
+    if (n === 0) {
+      // unchecked — no class
+    } else {
+      // Check if selection == full filtered set by comparing to the DB total
+      // We cache the total in state when loadPhotoPage runs
+      if (state.filteredTotal > 0 && n >= state.filteredTotal) {
+        allCb.classList.add('checked');
+      } else {
+        allCb.classList.add('indeterminate');
+      }
+    }
+  }
+
+  // Enable/disable photo export buttons
+  const csvBtn  = document.getElementById('btn-export-csv');
+  const copyBtn = document.getElementById('btn-export-copy');
+  const hasSelection = n > 0;
+  if (csvBtn)  csvBtn.disabled  = !hasSelection;
+  if (copyBtn) copyBtn.disabled = !hasSelection;
+}
+
+// Select-all / deselect-all
+document.getElementById('select-all-cb').addEventListener('click', async () => {
+  const allCb = document.getElementById('select-all-cb');
+  const isChecked = allCb.classList.contains('checked');
+
+  if (isChecked) {
+    // Deselect all
+    state.selectedPaths.clear();
+    // Uncheck all visible rows
+    document.querySelectorAll('.photo-cb').forEach(cb => cb.classList.remove('checked'));
+  } else {
+    // Select all paths for current filter — fetch from DB (handles > 60 visible rows)
+    const paths = await window.tt.getPhotoPaths({ filter: state.filter });
+    state.selectedPaths = new Set(paths);
+    // Check all visible rows
+    document.querySelectorAll('#photo-list .photo-row').forEach(row => {
+      row.querySelector('.photo-cb')?.classList.add('checked');
+    });
+  }
+
+  _updateSelectionUI();
+});
 
 // ── Map panel show/hide ────────────────────────────────────────────────────────
 // Sizes the map panel to fill the space below the results-header and filter-bar.
@@ -416,6 +516,8 @@ function _showMapPanel(show) {
     if (photoList)   photoList.style.display   = 'none';
     if (listFooter)  listFooter.style.display  = 'none';
     if (trialBanner) trialBanner.style.display = 'none';
+    const selBar = document.getElementById('select-bar');
+    if (selBar) selBar.style.display = 'none';
     viewResults.style.overflow = 'hidden';
 
     const usedH = (viewResults.querySelector('.results-header')?.offsetHeight || 0)
@@ -427,6 +529,8 @@ function _showMapPanel(show) {
     viewResults.style.overflow = '';
     if (photoList)   photoList.style.display   = '';
     if (listFooter)  listFooter.style.display  = '';
+    const selBar = document.getElementById('select-bar');
+    if (selBar) selBar.style.display = '';
     // trial banner visibility is managed by showTrialBanner()
   }
 }
@@ -491,7 +595,8 @@ document.getElementById('btn-export-csv').addEventListener('click', async (e) =>
   btn.disabled = true;
   btn.textContent = 'Exporting…';
   try {
-    const result = await window.tt.exportPhotosCsv();
+    const selectedPaths = [...state.selectedPaths];
+    const result = await window.tt.exportPhotosCsv({ selectedPaths });
     if (result.ok) {
       _exportToast(`CSV saved — ${result.count.toLocaleString()} photos.`);
     } else if (!result.canceled) {
@@ -504,15 +609,15 @@ document.getElementById('btn-export-csv').addEventListener('click', async (e) =>
 });
 
 document.getElementById('btn-export-copy').addEventListener('click', async (e) => {
-  const btn        = e.currentTarget;
+  const btn          = e.currentTarget;
   const progressWrap = document.getElementById('copy-progress-wrap');
   const barFill      = document.getElementById('copy-progress-bar-fill');
   const barLabel     = document.getElementById('copy-progress-label');
 
   btn.disabled = true;
 
-  // Start the copy — main process returns immediately, progress comes via events
-  const result = await window.tt.exportCopyFixed();
+  const selectedPaths = [...state.selectedPaths];
+  const result = await window.tt.exportCopyFixed({ selectedPaths });
   if (!result.ok) {
     btn.disabled = false;
     if (!result.canceled) _exportToast('Copy failed: ' + result.error, true);

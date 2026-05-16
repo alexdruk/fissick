@@ -436,6 +436,21 @@ ipcMain.handle('db:reset', () => {
   return { ok: true };
 });
 
+// Fetch file paths only (no thumbnails) for a given filter — used for bulk selection.
+// Returns up to 200k paths; typical Takeout is 10k–50k.
+ipcMain.handle('db:get-photo-paths', (_event, { filter = 'all' } = {}) => {
+  const conditions = {
+    all:       '',
+    fixed:     'WHERE exif_written = 1',
+    unmatched: 'WHERE sidecar_found = 0',
+    failed:    'WHERE exif_written = 0 AND sidecar_found = 0',
+  };
+  const where = conditions[filter] || '';
+  return db.prepare(`SELECT file_path FROM photos ${where} ORDER BY date_ts ASC NULLS LAST, filename ASC`)
+           .all()
+           .map(r => r.file_path);
+});
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 // Export 1: GPX — full location history
@@ -510,7 +525,7 @@ ipcMain.handle('export:gpx', async () => {
 });
 
 // Export 2: CSV report — full photo list with all metadata
-ipcMain.handle('export:photos-csv', async () => {
+ipcMain.handle('export:photos-csv', async (_event, { selectedPaths } = {}) => {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title:       'Export Photos Report as CSV',
     defaultPath: `fissick-photos-${_dateStamp()}.csv`,
@@ -519,12 +534,28 @@ ipcMain.handle('export:photos-csv', async () => {
   if (canceled || !filePath) return { ok: false, canceled: true };
 
   try {
-    const photos = db.prepare(`
-      SELECT filename, file_path, date_ts, lat, lng,
-             exif_written, sidecar_found, date_source, exif_error
-      FROM photos
-      ORDER BY date_ts ASC NULLS LAST, filename ASC
-    `).all();
+    let photos;
+    if (selectedPaths && selectedPaths.length > 0) {
+      // SQLite has a max 999 bind params — chunk if needed
+      const CHUNK = 900;
+      photos = [];
+      for (let i = 0; i < selectedPaths.length; i += CHUNK) {
+        const chunk = selectedPaths.slice(i, i + CHUNK);
+        const placeholders = chunk.map(() => '?').join(',');
+        photos.push(...db.prepare(`
+          SELECT filename, file_path, date_ts, lat, lng,
+                 exif_written, sidecar_found, date_source, exif_error
+          FROM photos WHERE file_path IN (${placeholders})
+          ORDER BY date_ts ASC NULLS LAST, filename ASC
+        `).all(...chunk));
+      }
+    } else {
+      photos = db.prepare(`
+        SELECT filename, file_path, date_ts, lat, lng,
+               exif_written, sidecar_found, date_source, exif_error
+        FROM photos ORDER BY date_ts ASC NULLS LAST, filename ASC
+      `).all();
+    }
 
     const csvEsc = v => {
       if (v == null) return '';
@@ -558,12 +589,29 @@ ipcMain.handle('export:photos-csv', async () => {
 });
 
 // Export 3: Copy fixed files to a user-selected folder
-// Copies every photo where exif_written = 1, preserving filenames.
-// Sends progress events back to the renderer during the copy.
-ipcMain.handle('export:copy-fixed', async () => {
-  // First: how many files are we copying?
-  const { n: total } = db.prepare('SELECT COUNT(*) as n FROM photos WHERE exif_written = 1').get();
-  if (total === 0) return { ok: false, error: 'No EXIF-fixed files to copy.' };
+ipcMain.handle('export:copy-fixed', async (_event, { selectedPaths } = {}) => {
+  // Determine which files to copy
+  let files;
+  if (selectedPaths && selectedPaths.length > 0) {
+    const CHUNK = 900;
+    files = [];
+    for (let i = 0; i < selectedPaths.length; i += CHUNK) {
+      const chunk = selectedPaths.slice(i, i + CHUNK);
+      const placeholders = chunk.map(() => '?').join(',');
+      files.push(...db.prepare(`
+        SELECT file_path, filename FROM photos
+        WHERE file_path IN (${placeholders})
+        ORDER BY filename ASC
+      `).all(...chunk));
+    }
+  } else {
+    files = db.prepare(`
+      SELECT file_path, filename FROM photos WHERE exif_written = 1 ORDER BY filename ASC
+    `).all();
+  }
+
+  const total = files.length;
+  if (total === 0) return { ok: false, error: 'No files to copy.' };
 
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title:       'Choose destination folder for fixed photos',
@@ -576,10 +624,6 @@ ipcMain.handle('export:copy-fixed', async () => {
 
   // Run async so we can stream progress back without blocking
   ;(async () => {
-    const files = db.prepare(`
-      SELECT file_path, filename FROM photos WHERE exif_written = 1 ORDER BY filename ASC
-    `).all();
-
     let copied = 0, skipped = 0, failed = 0;
 
     for (const file of files) {

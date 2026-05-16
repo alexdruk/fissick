@@ -18,6 +18,7 @@ const { extractZips }       = require('./zipExtractor');
 const { detectSchemas }     = require('./schemaDetector');
 const {
   walkPhotosDirectory,
+  walkForMediaOnly,
   buildJsonIndex,
   findSidecar,
   dateFromFilename,
@@ -109,29 +110,65 @@ async function run() {
     send('manifest', { manifest });
 
     if (!manifest.photos) {
-      const contents = fs.readdirSync(workDir).slice(0, 6).join(', ') || '(empty)';
-      status('error', `No Google Photos folder found. Contents: ${contents}`);
-      db.close();
-      return;
+      status('scanning', 'No Google Photos folder found — scanning entire archive for media files.');
     }
 
     // ── Phase 3: Async walk + index ─────────────────────────────────────────
+    // Strategy:
+    //   A) Walk manifest.photos (Google Photos folder) for BOTH media + JSON sidecars.
+    //      Sidecar matching only works within this structure — the JSONs live next to
+    //      the media files they describe.
+    //   B) Walk the entire workDir for any additional media files found outside Google
+    //      Photos (Google Drive exports, Blogger media, etc.). These have no sidecars
+    //      so they get filename-date extraction only.
+    //   Deduplication by absolute path prevents double-counting files that appear in
+    //   both walks (shouldn't happen in practice, but safe to guard).
+
     status('indexing', 'Indexing photos and sidecars…');
 
-    const { mediaFiles, jsonFiles } = await walkPhotosDirectory(manifest.photos);
-    const uniqueMedia = deduplicateMedia(mediaFiles);
+    let mediaFiles = [];
+    let jsonFiles  = [];
+
+    if (manifest.photos) {
+      // Walk the Google Photos folder — both media and JSON sidecars
+      const gp = await walkPhotosDirectory(manifest.photos);
+      mediaFiles = gp.mediaFiles;
+      jsonFiles  = gp.jsonFiles;
+    }
+
+    // Walk the entire workDir for any media outside Google Photos.
+    // Pass an excludeDir so we don't re-walk Google Photos we already have.
+    const extraMedia = await walkForMediaOnly(workDir, manifest.photos || null);
+    mediaFiles = mediaFiles.concat(extraMedia);
+
+    // Deduplicate by full path (covers the case where manifest.photos IS workDir)
+    const seenPaths  = new Set();
+    const allMedia   = mediaFiles.filter(p => {
+      if (seenPaths.has(p)) return false;
+      seenPaths.add(p);
+      return true;
+    });
+
+    const uniqueMedia = deduplicateMedia(allMedia);
     const jsonIndex   = buildJsonIndex(jsonFiles);
+
+    const outsideCount = extraMedia.length;
 
     send('counts', {
       totalMedia: uniqueMedia.length,
       totalJson:  jsonFiles.length,
-      duplicates: mediaFiles.length - uniqueMedia.length,
+      duplicates: allMedia.length - uniqueMedia.length,
+      outsideGooglePhotos: outsideCount,
     });
 
     if (uniqueMedia.length === 0) {
-      status('error', 'No image or video files found.');
+      status('error', 'No image or video files found anywhere in the archive.');
       db.close();
       return;
+    }
+
+    if (outsideCount > 0) {
+      status('indexing', `Found ${outsideCount.toLocaleString()} additional media file(s) outside Google Photos.`);
     }
 
     status('processing', `Processing ${uniqueMedia.length.toLocaleString()} photos with ${CONCURRENCY} concurrent ExifTool processes…`);
