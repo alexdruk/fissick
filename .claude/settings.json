@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/alex/Documents/fissicks/.claude/auto-commit.sh",
+            "statusMessage": "Auto-committing..."
+          }
+        ]
+      }
+    ]
+  }
+}
