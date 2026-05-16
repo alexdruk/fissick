@@ -436,6 +436,510 @@ ipcMain.handle('db:reset', () => {
   return { ok: true };
 });
 
+// ── Exports ───────────────────────────────────────────────────────────────────
+
+// Export 1: GPX — full location history
+// Named visits → <wpt> waypoints. Raw GPS points → <trk> track.
+// Track is split into segments on gaps > 6 hours to avoid drawing lines
+// across continents between separate trips.
+ipcMain.handle('export:gpx', async () => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title:       'Export Location History as GPX',
+    defaultPath: `fissick-locations-${_dateStamp()}.gpx`,
+    filters:     [{ name: 'GPX Files', extensions: ['gpx'] }],
+  });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+
+  try {
+    const points = db.prepare(`
+      SELECT lat, lng, ts, type, name, address
+      FROM locations
+      ORDER BY ts ASC
+    `).all();
+
+    const visits = points.filter(p => p.type === 'visit' && p.name);
+    const track  = points.filter(p => p.type === 'point');
+
+    const fmtTs = ts => ts ? new Date(ts).toISOString() : '';
+    const esc   = s  => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    const lines = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<gpx version="1.1" creator="Fissick" xmlns="http://www.topografix.com/GPX/1/1">',
+      `  <metadata><name>Location History</name><time>${new Date().toISOString()}</time></metadata>`,
+    ];
+
+    // Waypoints — named place visits
+    for (const v of visits) {
+      lines.push(`  <wpt lat="${v.lat}" lon="${v.lng}">`);
+      lines.push(`    <name>${esc(v.name)}</name>`);
+      if (v.address) lines.push(`    <desc>${esc(v.address)}</desc>`);
+      if (v.ts)      lines.push(`    <time>${fmtTs(v.ts)}</time>`);
+      lines.push('  </wpt>');
+    }
+
+    // Track — raw GPS points, split into segments on gaps > 6 hours
+    const GAP_MS = 6 * 60 * 60 * 1000;
+    if (track.length > 0) {
+      lines.push('  <trk>');
+      lines.push('    <name>Location History</name>');
+      lines.push('    <trkseg>');
+      let prevTs = track[0].ts;
+      for (const p of track) {
+        if (p.ts && prevTs && (p.ts - prevTs) > GAP_MS) {
+          lines.push('    </trkseg>');
+          lines.push('    <trkseg>');
+        }
+        lines.push(`      <trkpt lat="${p.lat}" lon="${p.lng}">`);
+        if (p.ts) lines.push(`        <time>${fmtTs(p.ts)}</time>`);
+        lines.push('      </trkpt>');
+        if (p.ts) prevTs = p.ts;
+      }
+      lines.push('    </trkseg>');
+      lines.push('  </trk>');
+    }
+
+    lines.push('</gpx>');
+    fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
+
+    return { ok: true, filePath, waypoints: visits.length, trackPoints: track.length };
+  } catch (err) {
+    console.error('[export:gpx]', err);
+    return { ok: false, error: err.message };
+  }
+});
+
+// Export 2: CSV report — full photo list with all metadata
+ipcMain.handle('export:photos-csv', async () => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title:       'Export Photos Report as CSV',
+    defaultPath: `fissick-photos-${_dateStamp()}.csv`,
+    filters:     [{ name: 'CSV Files', extensions: ['csv'] }],
+  });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+
+  try {
+    const photos = db.prepare(`
+      SELECT filename, file_path, date_ts, lat, lng,
+             exif_written, sidecar_found, date_source, exif_error
+      FROM photos
+      ORDER BY date_ts ASC NULLS LAST, filename ASC
+    `).all();
+
+    const csvEsc = v => {
+      if (v == null) return '';
+      const s = String(v);
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? '"' + s.replace(/"/g, '""') + '"'
+        : s;
+    };
+
+    const rows = [
+      ['filename','date','lat','lng','exif_written','sidecar_found','date_source','exif_error','file_path'].join(','),
+      ...photos.map(p => [
+        p.filename,
+        p.date_ts ? new Date(p.date_ts).toISOString() : '',
+        p.lat  ?? '',
+        p.lng  ?? '',
+        p.exif_written,
+        p.sidecar_found,
+        p.date_source || '',
+        p.exif_error  || '',
+        p.file_path,
+      ].map(csvEsc).join(',')),
+    ];
+
+    fs.writeFileSync(filePath, rows.join('\n'), 'utf8');
+    return { ok: true, filePath, count: photos.length };
+  } catch (err) {
+    console.error('[export:photos-csv]', err);
+    return { ok: false, error: err.message };
+  }
+});
+
+// Export 3: Copy fixed files to a user-selected folder
+// Copies every photo where exif_written = 1, preserving filenames.
+// Sends progress events back to the renderer during the copy.
+ipcMain.handle('export:copy-fixed', async () => {
+  // First: how many files are we copying?
+  const { n: total } = db.prepare('SELECT COUNT(*) as n FROM photos WHERE exif_written = 1').get();
+  if (total === 0) return { ok: false, error: 'No EXIF-fixed files to copy.' };
+
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title:       'Choose destination folder for fixed photos',
+    buttonLabel: 'Copy Here',
+    properties:  ['openDirectory', 'createDirectory'],
+  });
+  if (canceled || !filePaths[0]) return { ok: false, canceled: true };
+
+  const destDir = filePaths[0];
+
+  // Run async so we can stream progress back without blocking
+  ;(async () => {
+    const files = db.prepare(`
+      SELECT file_path, filename FROM photos WHERE exif_written = 1 ORDER BY filename ASC
+    `).all();
+
+    let copied = 0, skipped = 0, failed = 0;
+
+    for (const file of files) {
+      const dest = path.join(destDir, file.filename);
+      try {
+        await fs.promises.copyFile(file.file_path, dest);
+        copied++;
+      } catch (e) {
+        // Skip files that have moved since processing; don't abort the whole job
+        if (e.code === 'ENOENT') skipped++;
+        else { failed++; console.warn('[export:copy-fixed] skip:', e.message); }
+      }
+
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('export:copy-progress', {
+          copied, skipped, failed, total,
+          percent: Math.round(((copied + skipped + failed) / total) * 100),
+        });
+      }
+    }
+
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('export:copy-done', { copied, skipped, failed, total, destDir });
+    }
+  })();
+
+  return { ok: true, total }; // returns immediately; progress comes via events
+});
+
+// Export 4: Interactive HTML map — self-contained single file, opens in any browser.
+// All location data is baked in as JSON. Decimated to MAP_EXPORT_LIMIT points
+// (same cap as the in-app map) so the file stays browser-friendly.
+// Named place visits are always included in full regardless of the cap.
+const MAP_EXPORT_LIMIT = 50000;
+
+ipcMain.handle('export:map-html', async () => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title:       'Export Interactive Map as HTML',
+    defaultPath: `fissick-map-${_dateStamp()}.html`,
+    filters:     [{ name: 'HTML Files', extensions: ['html'] }],
+  });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+
+  try {
+    // Fetch all data — same decimation logic as db:get-locations
+    const totalRow = db.prepare(`SELECT COUNT(*) as n FROM locations`).get();
+    const total    = totalRow.n;
+    const step     = Math.max(1, Math.floor(total / MAP_EXPORT_LIMIT));
+
+    const whereDecimate = step > 1 ? `WHERE type = 'visit' OR id % ${step} = 0` : '';
+    const points = db.prepare(`
+      SELECT lat, lng, ts, type, name, address
+      FROM locations ${whereDecimate}
+      ORDER BY ts ASC
+    `).all();
+
+    const stats = db.prepare(`
+      SELECT MIN(ts) as earliest_ts, MAX(ts) as latest_ts,
+             SUM(CASE WHEN type='visit' THEN 1 ELSE 0 END) as visits
+      FROM locations
+    `).get();
+
+    const decimated   = step > 1;
+    const exportedPts = points.length;
+    const html        = _buildMapHtml(points, {
+      total, exportedPts, decimated,
+      earliestTs: stats.earliest_ts,
+      latestTs:   stats.latest_ts,
+      visits:     stats.visits,
+    });
+
+    fs.writeFileSync(filePath, html, 'utf8');
+    return { ok: true, filePath, total, exportedPts, decimated };
+  } catch (err) {
+    console.error('[export:map-html]', err);
+    return { ok: false, error: err.message };
+  }
+});
+
+// Build the self-contained HTML string
+function _buildMapHtml(points, meta) {
+  const jsonData = JSON.stringify(points);
+
+  const fmtDate = ts => ts
+    ? new Date(ts).toLocaleDateString('en', { year: 'numeric', month: 'short' })
+    : '—';
+
+  const decimatedNotice = meta.decimated
+    ? `<div class="notice">⚠ Large archive — showing ${meta.exportedPts.toLocaleString()} of ${meta.total.toLocaleString()} total points</div>`
+    : '';
+
+  const dateRange = (meta.earliestTs && meta.latestTs)
+    ? `${fmtDate(meta.earliestTs)} – ${fmtDate(meta.latestTs)}`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Location History — Fissick</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="anonymous"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="anonymous"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:     #f5f2ec; --panel:  #faf8f4; --panel2: #ede9e0;
+  --border: #d5cfc2; --ink:    #1c1a14; --mu:     #6b6454;
+  --dim:    #a09880; --acc:    #b85c2c; --acc-lt: #f5ede6;
+  --green:  #2a6b3c; --green-lt: #e8f4ec; --green-bdr: #b0d8bc;
+  --amber:  #8a6010; --amber-lt: #fdf5e0; --amber-bdr: #e8d080;
+  --blue:   #1e4d7a;
+  --serif: 'DM Serif Display', Georgia, serif;
+  --mono:  'DM Mono', monospace;
+  --sans:  'DM Sans', system-ui, sans-serif;
+}
+html, body { height: 100%; margin: 0; position: relative; background: var(--bg); font-family: var(--sans); color: var(--ink); -webkit-font-smoothing: antialiased; overflow: hidden; }
+
+/* Absolute layout — Leaflet needs the map container to have a
+   measurable pixel height at init time. flex:1 / min-height:0
+   collapses to 0px in some browsers before Leaflet reads it. */
+#shell   { position: absolute; inset: 0; display: flex; flex-direction: column; }
+#header  { flex-shrink: 0; }
+#stats-bar  { flex-shrink: 0; }
+#filter-bar { flex-shrink: 0; }
+#footer  { flex-shrink: 0; }
+
+/* Map fills whatever remains after the other bars */
+#map-wrap { flex: 1; position: relative; min-height: 0; }
+#map      { position: absolute; inset: 0; }
+#header {
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  padding: 14px 20px 12px; flex-shrink: 0;
+  display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+}
+#header h1 { font-family: var(--serif); font-size: 20px; color: var(--ink); letter-spacing: -.01em; }
+#header h1 span { color: var(--acc); }
+.h-meta { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+.h-sep  { color: var(--border); }
+
+/* Stats bar */
+#stats-bar {
+  background: var(--panel2); border-bottom: 1px solid var(--border);
+  padding: 7px 20px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.stat-pill {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--mu);
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 20px; padding: 3px 10px;
+}
+.stat-pill b { color: var(--ink); }
+.notice {
+  font-family: var(--mono); font-size: 10px;
+  color: var(--amber); background: var(--amber-lt);
+  border: 1px solid var(--amber-bdr); border-radius: 20px;
+  padding: 3px 10px;
+}
+
+/* Filter bar */
+#filter-bar {
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  padding: 7px 20px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.fl { font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); margin-right: 4px; }
+.filter-bar-date { font-family: var(--mono); font-size: 11px; background: var(--panel2); border: 1px solid var(--border); border-radius: 3px; padding: 4px 7px; color: var(--ink); outline: none; cursor: pointer; }
+.filter-bar-date:focus { border-color: var(--acc); }
+.filter-btn {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
+  border: none; border-radius: 3px; padding: 5px 12px; cursor: pointer;
+}
+.filter-btn-apply { background: var(--acc); color: #fff; }
+.filter-btn-clear { background: var(--panel2); color: var(--mu); border: 1px solid var(--border); }
+.filter-btn-clear:hover { color: var(--ink); }
+#filter-count { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-left: 4px; }
+
+/* Leaflet tooltip override */
+.leaflet-tooltip { font-family: var(--sans); font-size: 12.5px; }
+.leaflet-tooltip strong { font-family: var(--serif); }
+
+/* Footer */
+#footer {
+  background: var(--panel); border-top: 1px solid var(--border);
+  padding: 6px 20px; text-align: center;
+  font-family: var(--mono); font-size: 9px; color: var(--dim);
+  flex-shrink: 0;
+}
+#footer a { color: var(--acc); text-decoration: none; }
+</style>
+</head>
+<body>
+<div id="shell">
+
+  <div id="header">
+    <h1>My Location History<span>.</span></h1>
+    <span class="h-meta">${dateRange}</span>
+    <span class="h-sep">·</span>
+    <span class="h-meta">Exported with <strong style="color:var(--ink)">Fissick</strong></span>
+  </div>
+
+  <div id="stats-bar">
+    <div class="stat-pill"><b id="stat-points">—</b>&nbsp;GPS points</div>
+    <div class="stat-pill"><b>${(meta.visits || 0).toLocaleString()}</b>&nbsp;named places</div>
+    ${decimatedNotice}
+  </div>
+
+  <div id="filter-bar">
+    <span class="fl">Filter</span>
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mu)">
+      From <input type="date" id="date-from" class="filter-bar-date">
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mu)">
+      To <input type="date" id="date-to" class="filter-bar-date">
+    </label>
+    <button class="filter-btn filter-btn-apply" onclick="applyFilter()">Apply</button>
+    <button class="filter-btn filter-btn-clear" onclick="clearFilter()">Clear</button>
+    <span id="filter-count"></span>
+  </div>
+
+  <div id="map-wrap"><div id="map"></div></div>
+
+  <div id="footer">
+    Generated by <a href="https://fissick.app" target="_blank">Fissick</a>
+    &nbsp;·&nbsp; ${new Date().toLocaleDateString('en', { year:'numeric', month:'long', day:'numeric' })}
+    &nbsp;·&nbsp; ${meta.total.toLocaleString()} total location points in archive
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin="anonymous"></script>
+<script>
+// ── All location data ────────────────────────────────────────────────────────
+const ALL_POINTS = ${jsonData};
+
+// ── Map init ─────────────────────────────────────────────────────────────────
+const map = L.map('map', { center: [20, 0], zoom: 2 });
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19,
+}).addTo(map);
+
+const clusterGroup = L.markerClusterGroup({
+  chunkedLoading: true, chunkInterval: 200, chunkDelay: 50,
+  maxClusterRadius: 60, spiderfyOnMaxZoom: true, showCoverageOnHover: false,
+});
+const visitLayer = L.layerGroup();
+map.addLayer(clusterGroup);
+map.addLayer(visitLayer);
+
+// ── Date range inputs ─────────────────────────────────────────────────────────
+let allTs = ALL_POINTS.map(p => p.ts).filter(Boolean);
+let globalMin = allTs.length ? Math.min(...allTs) : null;
+let globalMax = allTs.length ? Math.max(...allTs) : null;
+
+function msToDate(ms) { return new Date(ms).toISOString().slice(0, 10); }
+
+if (globalMin) document.getElementById('date-from').value = msToDate(globalMin);
+if (globalMax) document.getElementById('date-to').value   = msToDate(globalMax);
+
+// ── Render ────────────────────────────────────────────────────────────────────
+let hasFit = false;
+
+function render(points) {
+  clusterGroup.clearLayers();
+  visitLayer.clearLayers();
+
+  const pointMarkers = [];
+  const bounds = [];
+
+  for (const p of points) {
+    if (p.lat == null || p.lng == null) continue;
+    bounds.push([p.lat, p.lng]);
+
+    if (p.type === 'visit' && p.name) {
+      const m = L.circleMarker([p.lat, p.lng], {
+        radius: 7, fillColor: '#b85c2c', color: '#8a3a10',
+        weight: 1.5, opacity: 1, fillOpacity: 0.85,
+      });
+      const dateStr = p.ts
+        ? new Date(p.ts).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' })
+        : '';
+      const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      m.bindTooltip(
+        '<strong style="font-family:\\'DM Serif Display\\',serif">' + esc(p.name) + '</strong>' +
+        (p.address ? '<br><span style="font-size:11px;opacity:.7">' + esc(p.address) + '</span>' : '') +
+        (dateStr   ? '<br><span style="font-family:monospace;font-size:10px;opacity:.6">' + dateStr + '</span>' : ''),
+        { sticky: false, direction: 'top', offset: [0, -4] }
+      );
+      visitLayer.addLayer(m);
+    } else {
+      const m = L.circleMarker([p.lat, p.lng], {
+        radius: 3, fillColor: '#1e4d7a', color: '#1e4d7a',
+        weight: 0, opacity: 0.7, fillOpacity: 0.55,
+      });
+      if (p.ts) m.bindPopup(
+        '<span style="font-family:monospace;font-size:10px">' + new Date(p.ts).toLocaleString() + '</span>',
+        { maxWidth: 180 }
+      );
+      pointMarkers.push(m);
+    }
+  }
+
+  clusterGroup.addLayers(pointMarkers);
+
+  const ptCount = points.filter(p => p.type !== 'visit').length;
+  document.getElementById('stat-points').textContent = ptCount.toLocaleString();
+
+  if (bounds.length > 0 && !hasFit) {
+    try { map.fitBounds(L.latLngBounds(bounds), { padding: [32, 32], maxZoom: 7 }); } catch {}
+    hasFit = true;
+  }
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+function applyFilter() {
+  const fromVal = document.getElementById('date-from').value;
+  const toVal   = document.getElementById('date-to').value;
+  const minTs   = fromVal ? new Date(fromVal + 'T00:00:00Z').getTime() : null;
+  const maxTs   = toVal   ? new Date(toVal   + 'T23:59:59Z').getTime() : null;
+
+  const filtered = ALL_POINTS.filter(p => {
+    if (minTs && p.ts && p.ts < minTs) return false;
+    if (maxTs && p.ts && p.ts > maxTs) return false;
+    return true;
+  });
+
+  const fc = document.getElementById('filter-count');
+  fc.textContent = (filtered.length < ALL_POINTS.length)
+    ? filtered.length.toLocaleString() + ' of ' + ALL_POINTS.length.toLocaleString() + ' shown'
+    : '';
+
+  render(filtered);
+}
+
+function clearFilter() {
+  if (globalMin) document.getElementById('date-from').value = msToDate(globalMin);
+  if (globalMax) document.getElementById('date-to').value   = msToDate(globalMax);
+  document.getElementById('filter-count').textContent = '';
+  render(ALL_POINTS);
+}
+
+// ── Initial render ────────────────────────────────────────────────────────────
+render(ALL_POINTS);
+</script>
+</body>
+</html>`;
+}
+
+// Utility: YYYYMMDD stamp for default filenames
+function _dateStamp() {
+  return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+}
+
 // ── Licence ───────────────────────────────────────────────────────────────────
 const TRIAL_LIMIT = 100;
 

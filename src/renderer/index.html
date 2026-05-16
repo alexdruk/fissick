@@ -326,6 +326,73 @@ html, body {
 .leaflet-pane { z-index: 1; }
 .leaflet-top, .leaflet-bottom { z-index: 2; }
 
+/* ── Export toolbar ── */
+#export-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 36px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#export-bar .export-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-right: 4px;
+}
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--mu);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: border-color .1s, color .1s, background .1s;
+  white-space: nowrap;
+}
+.export-btn:hover   { border-color: var(--acc-bdr); color: var(--acc); background: var(--acc-lt); }
+.export-btn:disabled { opacity: .4; cursor: default; pointer-events: none; }
+.export-btn .eb-icon { font-size: 13px; }
+
+/* Copy-fixed progress bar (shown inline in the export bar while copying) */
+#copy-progress-wrap {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+#copy-progress-bar-track {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  max-width: 160px;
+}
+#copy-progress-bar-fill {
+  height: 100%;
+  background: var(--acc);
+  border-radius: 2px;
+  width: 0%;
+  transition: width .2s;
+}
+#copy-progress-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mu);
+  white-space: nowrap;
+}
+
 /* ── Licence modal ── */
 #licence-modal {
   display: none;
@@ -464,6 +531,30 @@ html, body {
         <button class="back-btn" id="btn-back-results">← Back</button>
         <div class="results-title">Processing complete</div>
         <div class="results-stats" id="results-stats-row"></div>
+      </div>
+
+      <!-- Export toolbar -->
+      <div id="export-bar">
+        <span class="export-label">Export</span>
+        <button class="export-btn" id="btn-export-gpx" style="display:none">
+          <span class="eb-icon">🗺</span> Location GPX
+        </button>
+        <button class="export-btn" id="btn-export-map-html" style="display:none">
+          <span class="eb-icon">🌐</span> Interactive Map
+        </button>
+        <button class="export-btn" id="btn-export-csv">
+          <span class="eb-icon">📋</span> Photos CSV
+        </button>
+        <button class="export-btn" id="btn-export-copy">
+          <span class="eb-icon">📂</span> Copy Fixed Files
+        </button>
+        <!-- Inline progress for copy operation -->
+        <div id="copy-progress-wrap">
+          <div id="copy-progress-bar-track">
+            <div id="copy-progress-bar-fill"></div>
+          </div>
+          <span id="copy-progress-label">Copying…</span>
+        </div>
       </div>
 
       <!-- Trial limit banner — shown only in trial mode -->

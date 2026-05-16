@@ -32,6 +32,23 @@ contextBridge.exposeInMainWorld('tt', {
     return () => ipcRenderer.removeListener('process:event', handler);
   },
 
+  // ── Exports ────────────────────────────────────────────────────────────────
+  exportGpx:        ()     => ipcRenderer.invoke('export:gpx'),
+  exportPhotosCsv:  ()     => ipcRenderer.invoke('export:photos-csv'),
+  exportCopyFixed:  ()     => ipcRenderer.invoke('export:copy-fixed'),
+  exportMapHtml:    ()     => ipcRenderer.invoke('export:map-html'),
+
+  onCopyProgress: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('export:copy-progress', handler);
+    return () => ipcRenderer.removeListener('export:copy-progress', handler);
+  },
+  onCopyDone: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('export:copy-done', handler);
+    return () => ipcRenderer.removeListener('export:copy-done', handler);
+  },
+
   // ── Licence ────────────────────────────────────────────────────────────────
   getLicenceStatus:  ()     => ipcRenderer.invoke('licence:get-status'),
   activateLicence:   (opts) => ipcRenderer.invoke('licence:activate', opts),

@@ -255,15 +255,24 @@ async function loadResults() {
   await refreshStats();
   await loadPhotoPage(true);
 
-  // Load location stats to update sidebar and possibly reveal Map tab
+  // Load location stats to update sidebar, reveal Map tab, and show/hide location exports
   try {
     const locStats = await window.tt.getLocationStats();
-    if (locStats && locStats.total > 0) {
-      const el = document.getElementById('sb-locations');
-      if (el) el.textContent = locStats.total.toLocaleString();
-      const mapTab = document.getElementById('tab-map');
-      if (mapTab) mapTab.style.display = '';
-    }
+    const hasLoc   = locStats && locStats.total > 0;
+
+    // Map tab
+    const mapTab = document.getElementById('tab-map');
+    if (mapTab) mapTab.style.display = hasLoc ? '' : 'none';
+
+    // Sidebar stat
+    const sbLoc = document.getElementById('sb-locations');
+    if (sbLoc) sbLoc.textContent = hasLoc ? locStats.total.toLocaleString() : '—';
+
+    // Location export buttons — only meaningful when there is location data
+    const btnGpx = document.getElementById('btn-export-gpx');
+    const btnMap = document.getElementById('btn-export-map-html');
+    if (btnGpx) btnGpx.style.display = hasLoc ? '' : 'none';
+    if (btnMap) btnMap.style.display = hasLoc ? '' : 'none';
   } catch {}
 }
 
@@ -457,6 +466,126 @@ function handleTrialLimitHit() {
 document.getElementById('btn-unlock').addEventListener('click', () => {
   openLicenceModal();
 });
+
+// ── Exports ────────────────────────────────────────────────────────────────────
+
+document.getElementById('btn-export-gpx').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Exporting…';
+  try {
+    const result = await window.tt.exportGpx();
+    if (result.ok) {
+      _exportToast(`GPX saved — ${result.trackPoints.toLocaleString()} track points, ${result.waypoints} named places.`);
+    } else if (!result.canceled) {
+      _exportToast('GPX export failed: ' + result.error, true);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="eb-icon">🗺</span> Location GPX';
+  }
+});
+
+document.getElementById('btn-export-csv').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Exporting…';
+  try {
+    const result = await window.tt.exportPhotosCsv();
+    if (result.ok) {
+      _exportToast(`CSV saved — ${result.count.toLocaleString()} photos.`);
+    } else if (!result.canceled) {
+      _exportToast('CSV export failed: ' + result.error, true);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="eb-icon">📋</span> Photos CSV';
+  }
+});
+
+document.getElementById('btn-export-copy').addEventListener('click', async (e) => {
+  const btn        = e.currentTarget;
+  const progressWrap = document.getElementById('copy-progress-wrap');
+  const barFill      = document.getElementById('copy-progress-bar-fill');
+  const barLabel     = document.getElementById('copy-progress-label');
+
+  btn.disabled = true;
+
+  // Start the copy — main process returns immediately, progress comes via events
+  const result = await window.tt.exportCopyFixed();
+  if (!result.ok) {
+    btn.disabled = false;
+    if (!result.canceled) _exportToast('Copy failed: ' + result.error, true);
+    return;
+  }
+
+  // Show inline progress bar
+  progressWrap.style.display = 'flex';
+  barFill.style.width = '0%';
+  barLabel.textContent = `Copying 0 / ${result.total.toLocaleString()}…`;
+
+  const unsubProgress = window.tt.onCopyProgress(({ copied, skipped, failed, total, percent }) => {
+    barFill.style.width = percent + '%';
+    barLabel.textContent = `Copying ${(copied + skipped + failed).toLocaleString()} / ${total.toLocaleString()}…`;
+  });
+
+  const unsubDone = window.tt.onCopyDone(({ copied, skipped, failed, destDir }) => {
+    unsubProgress();
+    unsubDone();
+    progressWrap.style.display = 'none';
+    btn.disabled = false;
+    btn.innerHTML = '<span class="eb-icon">📂</span> Copy Fixed Files';
+    const parts = [`${copied.toLocaleString()} files copied`];
+    if (skipped) parts.push(`${skipped} not found`);
+    if (failed)  parts.push(`${failed} errors`);
+    _exportToast(parts.join(' · '));
+  });
+});
+
+document.getElementById('btn-export-map-html').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Building map…';
+  try {
+    const result = await window.tt.exportMapHtml();
+    if (result.ok) {
+      const msg = result.decimated
+        ? `Map saved — ${result.exportedPts.toLocaleString()} of ${result.total.toLocaleString()} points (sampled for browser performance).`
+        : `Map saved — ${result.exportedPts.toLocaleString()} points.`;
+      _exportToast(msg);
+    } else if (!result.canceled) {
+      _exportToast('Map export failed: ' + result.error, true);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="eb-icon">🌐</span> Interactive Map';
+  }
+});
+
+// Small transient toast shown below the export bar after an export completes
+let _toastTimer = null;
+function _exportToast(message, isError = false) {
+  let toast = document.getElementById('export-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'export-toast';
+    toast.style.cssText = `
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      font-family: var(--mono); font-size: 11px; padding: 8px 18px;
+      border-radius: 20px; border: 1px solid; z-index: 200;
+      transition: opacity .3s; white-space: nowrap;
+    `;
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.style.background    = isError ? 'var(--red-lt)'   : 'var(--green-lt)';
+  toast.style.borderColor   = isError ? 'var(--red-bdr)'  : 'var(--green-bdr)';
+  toast.style.color         = isError ? 'var(--red)'      : 'var(--green)';
+  toast.style.opacity       = '1';
+  toast.style.display       = 'block';
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 4000);
+}
 
 // ── Licence modal ──────────────────────────────────────────────────────────────
 function openLicenceModal() {
