@@ -37,7 +37,13 @@ contextBridge.exposeInMainWorld('tt', {
   exportGpx:        ()     => ipcRenderer.invoke('export:gpx'),
   exportPhotosCsv:  (opts) => ipcRenderer.invoke('export:photos-csv', opts),
   exportCopyFixed:  (opts) => ipcRenderer.invoke('export:copy-fixed', opts),
+  cancelCopy:       ()     => ipcRenderer.invoke('export:cancel-copy'),
   exportMapHtml:    ()     => ipcRenderer.invoke('export:map-html'),
+
+  // ── Utilities ──────────────────────────────────────────────────────────────
+  heicToJpeg:          (opts) => ipcRenderer.invoke('util:heic-to-jpeg', opts),
+  generateThumbnails:  ()     => ipcRenderer.invoke('util:generate-thumbnails'),
+  getExtensions:       ()     => ipcRenderer.invoke('db:get-extensions'),
 
   onCopyProgress: (cb) => {
     const handler = (_e, data) => cb(data);
@@ -48,6 +54,11 @@ contextBridge.exposeInMainWorld('tt', {
     const handler = (_e, data) => cb(data);
     ipcRenderer.on('export:copy-done', handler);
     return () => ipcRenderer.removeListener('export:copy-done', handler);
+  },
+  onThumbProgress: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('util:thumb-progress', handler);
+    return () => ipcRenderer.removeListener('util:thumb-progress', handler);
   },
 
   // ── Licence ────────────────────────────────────────────────────────────────

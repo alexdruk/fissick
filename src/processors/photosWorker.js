@@ -14,6 +14,10 @@ const fs       = require('fs');
 const os       = require('os');
 const Database = require('better-sqlite3');
 
+// sharp is optional — gracefully absent if not yet installed
+let sharp = null;
+try { sharp = require('sharp'); } catch {}
+
 const { extractZips }       = require('./zipExtractor');
 const { detectSchemas }     = require('./schemaDetector');
 const {
@@ -60,7 +64,7 @@ async function withPool(items, concurrency, fn) {
 // ── Main pipeline ─────────────────────────────────────────────────────────────
 
 async function run() {
-  const { zipPaths, extractedFolder, tempDir, dbPath, trialLimit } = workerData;
+  const { zipPaths, extractedFolder, tempDir, dbPath, trialLimit, thumbDir } = workerData;
   const isLimited = trialLimit != null;
   if (isLimited) status('processing', `Trial mode: EXIF writing limited to first ${trialLimit} photos.`);
 
@@ -69,10 +73,10 @@ async function run() {
   const insertPhoto = db.prepare(`
     INSERT OR REPLACE INTO photos
       (file_path, filename, date_ts, lat, lng,
-       exif_written, sidecar_found, date_source, exif_error, processed_at)
+       exif_written, sidecar_found, date_source, exif_error, processed_at, thumbnail_path)
     VALUES
       (@filePath, @filename, @dateTs, @lat, @lng,
-       @exifWritten, @sidecarFound, @dateSource, @exifError, @processedAt)
+       @exifWritten, @sidecarFound, @dateSource, @exifError, @processedAt, @thumbnailPath)
   `);
   const insertBatch = db.transaction(rows => { for (const r of rows) insertPhoto.run(r); });
 
@@ -176,6 +180,7 @@ async function run() {
     // ── Phase 4: Concurrency-pool processing ────────────────────────────────
     let processed = 0, fixed = 0, matched = 0, failed = 0;
   let writesIssued = 0; // incremented synchronously before await — prevents race condition
+  let trialLimitMessageSent = false;
   const startMs = Date.now();
 
     // Flush results to SQLite every N completions
@@ -217,7 +222,12 @@ async function run() {
           sidecarData = JSON.parse(fs.readFileSync(sidecarPath, 'utf8'));
         } catch (e) {
           exifError = `Sidecar parse error: ${e.message}`;
-          return buildRow(mediaPath, filename, null, null, null, 0, 1, 'none', exifError);
+          pendingRows.push(buildRow(mediaPath, filename, null, null, null, 0, 1, 'none', exifError));
+          processed++;
+          failed++;
+          if (pendingRows.length >= FLUSH_EVERY) flushPending();
+          reportProgress();
+          return;
         }
 
         const rawTs = parseInt(sidecarData.photoTakenTime?.timestamp || 0, 10);
@@ -266,14 +276,33 @@ async function run() {
 
       const row = buildRow(mediaPath, filename, dateTs, lat, lng, exifWritten, sidecarFound, dateSource, exifError);
 
-      // Update shared counters
+      // ── Thumbnail generation ────────────────────────────────────────────
+      // HEIC/HEIF skipped — sharp can't decode them without libheif.
+      // The "Generate Thumbnails" button uses nativeImage in the main process.
+      if (sharp && thumbDir) {
+        const ext = filename.split(".").pop()?.toLowerCase();
+        const SHARP_EXTS = ["jpg","jpeg","png","gif","webp","bmp","tiff","tif","avif"];
+        if (SHARP_EXTS.includes(ext)) {
+          const safeBase = mediaPath.replace(/[/\\:]/g, "_").slice(-120);
+          const thumbPath = path.join(thumbDir, safeBase + "_t.jpg");
+          try {
+            await sharp(mediaPath)
+              .resize(280, 280, { fit: "inside", withoutEnlargement: true })
+              .rotate()
+              .jpeg({ quality: 72 })
+              .toFile(thumbPath);
+            row.thumbnailPath = thumbPath;
+          } catch {}
+        }
+      }
       processed++;
       if (row.sidecarFound) matched++;
       if (row.exifWritten)  fixed++;
       if (!row.sidecarFound && row.dateSource === 'none') failed++;
 
       // Notify renderer exactly once when trial limit is hit
-      if (isLimited && writesIssued === trialLimit && !row.exifWritten && exifError === 'trial_limit') {
+      if (isLimited && !trialLimitMessageSent && writesIssued >= trialLimit && !row.exifWritten && exifError === 'trial_limit') {
+        trialLimitMessageSent = true;
         send('status', { phase: 'processing', message: `Trial limit reached: ${trialLimit} photos fixed. Remaining photos indexed but not written.` });
         send('trial-limit-hit', { limit: trialLimit });
       }
@@ -305,7 +334,7 @@ async function run() {
 }
 
 function buildRow(filePath, filename, dateTs, lat, lng, exifWritten, sidecarFound, dateSource, exifError) {
-  return { filePath, filename, dateTs, lat, lng, exifWritten, sidecarFound, dateSource, exifError: exifError || null, processedAt: Date.now() };
+  return { filePath, filename, dateTs, lat, lng, exifWritten, sidecarFound, dateSource, exifError: exifError || null, processedAt: Date.now(), thumbnailPath: null };
 }
 
 run().catch(err => parentPort.postMessage({ type: 'status', phase: 'error', message: err.message }));

@@ -12,6 +12,9 @@ const state = {
   filter:      'all',
   offset:      0,
   limit:       60,
+  dateFrom:    null,
+  dateTo:      null,
+  ext:         null, // file extension filter e.g. 'heic', 'jpg', null = all
   // ── Selection ──────────────────────────────────────────────────────────────
   // selectedPaths: Set of file_path strings. Lives in memory, not in the DOM.
   // Updated by checkbox clicks, filter-tab bulk selection, and select-all.
@@ -259,6 +262,7 @@ async function loadResults() {
   state.filteredTotal = 0;
   await refreshLicenceStatus();
   await refreshStats();
+  await populateExtFilter();
   await loadPhotoPage(true);
   _updateSelectionUI();
 
@@ -295,6 +299,8 @@ async function refreshStats() {
   let range = '';
   if (stats.earliest_ts && stats.latest_ts) {
     range = `<div class="stat-pill"><span class="sp-val">${new Date(stats.earliest_ts).getFullYear()}–${new Date(stats.latest_ts).getFullYear()}</span> date range</div>`;
+    // Populate year selects now that we have the actual range
+    populateDateRangeSelects(stats.earliest_ts, stats.latest_ts);
   }
   document.getElementById('results-stats-row').innerHTML = `
     <div class="stat-pill green"><span class="sp-val">${(stats.fixed||0).toLocaleString()}</span> EXIF fixed (${fixRate}%)</div>
@@ -307,7 +313,7 @@ async function refreshStats() {
 
 async function loadPhotoPage(replace = false) {
   try {
-    const result = await window.tt.getPhotos({ offset: state.offset, limit: state.limit, filter: state.filter });
+    const result = await window.tt.getPhotos({ offset: state.offset, limit: state.limit, filter: state.filter, dateFrom: state.dateFrom, dateTo: state.dateTo, ext: state.ext });
     if (!result) return;
 
     const { photos = [], total = 0 } = result;
@@ -349,8 +355,8 @@ function renderPhotoRow(photo) {
   cb.role = 'checkbox';
   if (state.selectedPaths.has(photo.file_path)) cb.classList.add('checked');
 
-  // Toggle on row click (anywhere except the tags)
-  row.addEventListener('click', () => {
+  cb.addEventListener('click', (e) => {
+    e.stopPropagation();
     if (state.selectedPaths.has(photo.file_path)) {
       state.selectedPaths.delete(photo.file_path);
       cb.classList.remove('checked');
@@ -361,57 +367,98 @@ function renderPhotoRow(photo) {
     _updateSelectionUI();
   });
 
+  // Thumbnail
   const ext = (photo.filename.split('.').pop() || '').toLowerCase();
+  const VIDEO_EXTS = ['mov','mp4','m4v','avi','mkv','3gp'];
   const isImage = ['jpg','jpeg','png','gif','webp','heic','heif','bmp'].includes(ext);
-  const thumb = isImage
-    ? `<img class="photo-thumb" src="local://${photo.file_path}" loading="lazy" alt=""
-           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-       <div class="photo-thumb-placeholder" style="display:none">🖼️</div>`
-    : `<div class="photo-thumb-placeholder">🎥</div>`;
+  const isVideo = VIDEO_EXTS.includes(ext);
+  const thumbSrc = photo.thumbnail_path || photo.file_path;
 
+  const thumbWrap = document.createElement('div');
+  thumbWrap.style.cssText = 'display:contents';
+  if (isImage) {
+    thumbWrap.innerHTML = `<img class="photo-thumb" src="local://${thumbSrc}" loading="lazy" alt=""
+        onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div class="photo-thumb-placeholder" style="display:none">🖼️</div>`;
+  } else if (isVideo) {
+    thumbWrap.innerHTML = `<div class="photo-thumb-placeholder photo-thumb-video">🎬<span class="thumb-video-label">${ext.toUpperCase()}</span></div>`;
+  } else {
+    thumbWrap.innerHTML = `<div class="photo-thumb-placeholder">📄</div>`;
+  }
+
+  // Info cell
   const dateStr = photo.date_ts
     ? new Date(photo.date_ts).toLocaleDateString('en', { year:'numeric', month:'short', day:'numeric' })
     : '—';
-
-  const tag = photo.exif_written
-    ? (photo.date_source === 'filename'
-        ? `<span class="tag tag-fname" title="No metadata file found — the date was read from the filename and written into the photo">Filename date</span>`
-        : `<span class="tag tag-fixed" title="Date and location were written directly into the photo file — apps like Photos, Lightroom and Google Photos will now read them correctly">EXIF fixed</span>`)
-    : `<span class="tag tag-none" title="No date could be found for this photo — neither from a metadata file nor the filename. The photo will appear undated in your library.">No date</span>`;
-
-  const gps = photo.lat != null
-    ? `<span class="tag tag-gps" title="GPS coordinates are embedded in this photo — it will appear on a map in Photos, Google Photos and other apps">GPS</span>`
-    : `<span></span>`;
-
-  const sourceTips = {
-    'sidecar':  'Date came from a Google metadata file (.json) exported alongside this photo',
-    'filename': 'Date was read from the filename — e.g. IMG_20230601_143022.jpg',
-    'none':     'No date source found',
-  };
-  const sourceLabel = { 'sidecar': 'sidecar', 'filename': 'filename', 'none': 'no source' }[photo.date_source] || (photo.date_source || '—');
-  const sourceTip   = sourceTips[photo.date_source] || '';
-
-  // Build the row: checkbox + thumb + info + tags
-  const inner = document.createElement('div');
-  inner.style.cssText = 'display:contents';
-  inner.innerHTML = `
-    ${thumb}
-    <div class="photo-info">
-      <div class="photo-name" title="${photo.filename}">${photo.filename}</div>
-      <div class="photo-meta">${dateStr}${photo.lat != null ? ` · ${photo.lat.toFixed(4)}, ${photo.lng.toFixed(4)}` : ''}</div>
-    </div>
-    ${tag}${gps}
-    <span style="font-family:var(--mono);font-size:9px;color:var(--dim)" title="${sourceTip}">${sourceLabel}</span>
+  const infoDiv = document.createElement('div');
+  infoDiv.className = 'photo-info';
+  infoDiv.innerHTML = `
+    <div class="photo-name" title="${photo.filename}">${photo.filename}</div>
+    <div class="photo-meta">${dateStr}${photo.lat != null ? ` · lat ${photo.lat.toFixed(4)}, lng ${photo.lng.toFixed(4)}` : ''}</div>
   `;
 
+  // Tag
+  let tagHtml;
+  if (photo.date_ts == null) {
+    tagHtml = `<span class="tag tag-none">No date</span>`;
+  } else if (photo.exif_written) {
+    tagHtml = photo.date_source === 'filename'
+      ? `<span class="tag tag-fname">Filename date</span>`
+      : `<span class="tag tag-fixed">EXIF fixed</span>`;
+  } else {
+    tagHtml = `<span class="tag tag-found">Date found</span>`;
+  }
+  const tagSpan = document.createElement('span');
+  tagSpan.innerHTML = tagHtml;
+
+  // GPS badge
+  const gpsSpan = document.createElement('span');
+  gpsSpan.innerHTML = photo.lat != null
+    ? `<span class="tag tag-gps">GPS</span>`
+    : '';
+
+  // Source label
+  const sourceLabel = { 'sidecar': 'sidecar', 'filename': 'filename', 'none': 'no source' }[photo.date_source] || (photo.date_source || '—');
+  const srcSpan = document.createElement('span');
+  srcSpan.style.cssText = 'font-family:var(--mono);font-size:9px;color:var(--dim)';
+  srcSpan.textContent = sourceLabel;
+
+  // Assemble row — direct children match the 6-column grid
   row.appendChild(cb);
-  row.appendChild(inner);
+  // thumbWrap uses display:contents so its child img/div become direct grid items
+  row.appendChild(thumbWrap);
+  row.appendChild(infoDiv);
+  row.appendChild(tagSpan);
+  row.appendChild(gpsSpan);
+  row.appendChild(srcSpan);
+
+  // Thumbnail or video placeholder click → lightbox
+  const thumbImg = row.querySelector('.photo-thumb');
+  const thumbVid = row.querySelector('.photo-thumb-video');
+  const clickTarget = thumbImg || thumbVid;
+  if (clickTarget) {
+    clickTarget.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await openLightbox(photo);
+    });
+  }
+
   return row;
 }
 
 document.getElementById('btn-back-results').addEventListener('click', async () => {
   await window.tt.resetData();
   state.source = {};
+  state.dateFrom = null;
+  state.dateTo   = null;
+  state.ext      = null;
+  const extSel = document.getElementById('ext-filter-select');
+  if (extSel) extSel.value = '';
+  const fromMonthSelBack = document.getElementById('dr-from-month');
+  const toMonthSelBack   = document.getElementById('dr-to-month');
+  if (fromMonthSelBack) fromMonthSelBack.value = '';
+  if (toMonthSelBack)   toMonthSelBack.value   = '';
+  document.getElementById('dr-clear').style.display = 'none';
   showFeedback(zipFeedback, '');
   showFeedback(folderFeedback, '');
   document.getElementById('manual-path-input').value = '';
@@ -438,10 +485,22 @@ document.querySelectorAll('.filter-tab').forEach(tab => {
 
       // ── Clear selection on every tab switch ─────────────────────────────
       state.selectedPaths.clear();
+      // Reset date range on tab switch
+      state.dateFrom = null;
+      state.dateTo   = null;
+      // Reset ext filter on tab switch
+      state.ext = null;
+      const extSel2 = document.getElementById('ext-filter-select');
+      if (extSel2) extSel2.value = '';
+      const fmSel = document.getElementById('dr-from-month');
+      const tmSel = document.getElementById('dr-to-month');
+      if (fmSel) fmSel.value = '';
+      if (tmSel) tmSel.value = '';
+      document.getElementById('dr-clear').style.display = 'none';
 
       // If a specific filter tab (not ALL), bulk-select all paths for that filter
       if (newFilter !== 'all') {
-        const paths = await window.tt.getPhotoPaths({ filter: newFilter });
+        const paths = await window.tt.getPhotoPaths({ filter: newFilter, dateFrom: state.dateFrom, dateTo: state.dateTo, ext: state.ext });
         paths.forEach(p => state.selectedPaths.add(p));
       }
 
@@ -502,7 +561,7 @@ document.getElementById('select-all-cb').addEventListener('click', async () => {
     document.querySelectorAll('.photo-cb').forEach(cb => cb.classList.remove('checked'));
   } else {
     // Select all paths for current filter — fetch from DB (handles > 60 visible rows)
-    const paths = await window.tt.getPhotoPaths({ filter: state.filter });
+    const paths = await window.tt.getPhotoPaths({ filter: state.filter, dateFrom: state.dateFrom, dateTo: state.dateTo, ext: state.ext });
     state.selectedPaths = new Set(paths);
     // Check all visible rows
     document.querySelectorAll('#photo-list .photo-row').forEach(row => {
@@ -646,16 +705,25 @@ document.getElementById('btn-export-copy').addEventListener('click', async (e) =
     barLabel.textContent = `Copying ${(copied + skipped + failed).toLocaleString()} / ${total.toLocaleString()}…`;
   });
 
-  const unsubDone = window.tt.onCopyDone(({ copied, skipped, failed, destDir }) => {
+  const unsubDone = window.tt.onCopyDone(({ copied, skipped, failed, destDir, aborted }) => {
     unsubProgress();
     unsubDone();
     progressWrap.style.display = 'none';
     btn.disabled = false;
     btn.innerHTML = '<span class="eb-icon">📂</span> Copy Fixed Files';
-    const parts = [`${copied.toLocaleString()} files copied`];
-    if (skipped) parts.push(`${skipped} not found`);
-    if (failed)  parts.push(`${failed} errors`);
-    _exportToast(parts.join(' · '));
+
+    // Reset abort button
+    const abortBtn = document.getElementById('btn-copy-abort');
+    if (abortBtn) { abortBtn.disabled = false; abortBtn.textContent = 'Abort'; }
+
+    if (aborted) {
+      _exportToast(`Aborted — ${copied.toLocaleString()} files copied before stopping.`, true);
+    } else {
+      const parts = [`${copied.toLocaleString()} files copied`];
+      if (skipped) parts.push(`${skipped} not found`);
+      if (failed)  parts.push(`${failed} errors`);
+      _exportToast(parts.join(' · '));
+    }
   });
 });
 
@@ -761,8 +829,277 @@ document.getElementById('licence-modal').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) closeLicenceModal();
 });
 
+// ── Date range filter ──────────────────────────────────────────────────────────
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// Populate year selects from the data's actual date range.
+// Called from loadResults() after refreshStats() returns.
+function populateDateRangeSelects(earliestTs, latestTs) {
+  if (!earliestTs || !latestTs) return;
+  const firstYear = new Date(earliestTs).getFullYear();
+  const lastYear  = new Date(latestTs).getFullYear();
+
+  ['dr-from-year', 'dr-to-year'].forEach((id, idx) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    // Keep the placeholder option, rebuild the rest
+    sel.innerHTML = '<option value="">Year</option>';
+    for (let y = firstYear; y <= lastYear; y++) {
+      const opt = document.createElement('option');
+      opt.value       = y;
+      opt.textContent = y;
+      sel.appendChild(opt);
+    }
+    // Pre-select sensible defaults: from = first year, to = last year
+    if (idx === 0) sel.value = firstYear;
+    else           sel.value = lastYear;
+  });
+}
+
+function populateDaySelect(selectId, year, month) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">Day</option>';
+  if (!year || !month) return;
+  const daysInMonth = new Date(parseInt(year), parseInt(month), 0).getDate();
+  for (let d = 1; d <= daysInMonth; d++) {
+    const opt = document.createElement('option');
+    opt.value = d; opt.textContent = d;
+    sel.appendChild(opt);
+  }
+  if (prev && parseInt(prev) <= daysInMonth) sel.value = prev;
+}
+
+// Repopulate day selects when year/month change
+['dr-from-year','dr-from-month'].forEach(id => {
+  document.getElementById(id)?.addEventListener('change', () => {
+    populateDaySelect('dr-from-day',
+      document.getElementById('dr-from-year').value,
+      document.getElementById('dr-from-month').value);
+  });
+});
+['dr-to-year','dr-to-month'].forEach(id => {
+  document.getElementById(id)?.addEventListener('change', () => {
+    populateDaySelect('dr-to-day',
+      document.getElementById('dr-to-year').value,
+      document.getElementById('dr-to-month').value);
+  });
+});
+
+document.getElementById('dr-apply').addEventListener('click', async () => {
+  const fromYear  = document.getElementById('dr-from-year').value;
+  const fromMonth = document.getElementById('dr-from-month').value;
+  const fromDay   = document.getElementById('dr-from-day').value;
+  const toYear    = document.getElementById('dr-to-year').value;
+  const toMonth   = document.getElementById('dr-to-month').value;
+  const toDay     = document.getElementById('dr-to-day').value;
+
+  if (fromYear) {
+    const m = fromMonth ? parseInt(fromMonth) - 1 : 0;
+    const d = fromDay   ? parseInt(fromDay)        : 1;
+    state.dateFrom = new Date(parseInt(fromYear), m, d, 0, 0, 0, 0).getTime();
+  } else {
+    state.dateFrom = null;
+  }
+
+  if (toYear) {
+    const m = toMonth ? parseInt(toMonth) - 1 : 11;
+    const d = toDay   ? parseInt(toDay)        : 0; // day 0 = last day of previous month
+    // If day specified: end of that day; if not: end of last day of month
+    state.dateTo = toDay
+      ? new Date(parseInt(toYear), m, parseInt(toDay), 23, 59, 59, 999).getTime()
+      : new Date(parseInt(toYear), toMonth ? parseInt(toMonth) : 12, 0, 23, 59, 59, 999).getTime();
+  } else {
+    state.dateTo = null;
+  }
+
+  const clearBtn = document.getElementById('dr-clear');
+  if (clearBtn) clearBtn.style.display = (state.dateFrom || state.dateTo) ? '' : 'none';
+
+  state.offset = 0;
+  state.selectedPaths.clear();
+  await loadPhotoPage(true);
+  _updateSelectionUI();
+});
+
+document.getElementById('dr-clear').addEventListener('click', async () => {
+  state.dateFrom = null;
+  state.dateTo   = null;
+  // Reset selects to their default (populated values — leave years as-is, clear months)
+  const fromMonthSel = document.getElementById('dr-from-month');
+  const toMonthSel   = document.getElementById('dr-to-month');
+  if (fromMonthSel) fromMonthSel.value = '';
+  if (toMonthSel)   toMonthSel.value   = '';
+  document.getElementById('dr-clear').style.display = 'none';
+  state.offset = 0;
+  state.selectedPaths.clear();
+  await loadPhotoPage(true);
+  _updateSelectionUI();
+});
+
+// ── Extension filter ───────────────────────────────────────────────────────────
+
+async function populateExtFilter() {
+  const sel = document.getElementById('ext-filter-select');
+  if (!sel) return;
+  try {
+    const exts = await window.tt.getExtensions();
+    sel.innerHTML = '<option value="">All types</option>';
+    exts.forEach(({ ext, n }) => {
+      const opt = document.createElement('option');
+      opt.value = ext;
+      opt.textContent = `${ext.toUpperCase()} (${n.toLocaleString()})`;
+      sel.appendChild(opt);
+    });
+  } catch {}
+}
+
+document.getElementById('ext-filter-select').addEventListener('change', async (e) => {
+  state.ext    = e.target.value || null;
+  state.offset = 0;
+  state.selectedPaths.clear();
+
+  // Reset tab to ALL when a type is selected — otherwise the tab filter
+  // combines with the type filter and produces confusing results
+  if (state.ext && state.filter !== 'all') {
+    state.filter = 'all';
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector('.filter-tab[data-filter="all"]')?.classList.add('active');
+  }
+
+  await loadPhotoPage(true);
+  _updateSelectionUI();
+});
+
+// ── Generate Thumbnails ────────────────────────────────────────────────────────
+
+document.getElementById('btn-generate-thumbs').addEventListener('click', async () => {
+  const btn       = document.getElementById('btn-generate-thumbs');
+  const wrap      = document.getElementById('thumb-progress-wrap');
+  const fill      = document.getElementById('thumb-progress-bar-fill');
+  const label     = document.getElementById('thumb-progress-label');
+
+  btn.disabled = true;
+  wrap.style.display = 'flex';
+  fill.style.width   = '0%';
+  label.textContent  = 'Starting…';
+
+  const unsub = window.tt.onThumbProgress(({ done, total, generated }) => {
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    fill.style.width  = pct + '%';
+    label.textContent = `${done.toLocaleString()} / ${total.toLocaleString()} · ${generated.toLocaleString()} created`;
+  });
+
+  try {
+    const result = await window.tt.generateThumbnails();
+    unsub();
+    fill.style.width  = '100%';
+    label.textContent = `Done — ${result.generated.toLocaleString()} thumbnails created`;
+    // Reload current page to show new thumbnails
+    await loadPhotoPage(true);
+    setTimeout(() => {
+      wrap.style.display = 'none';
+      btn.disabled = false;
+    }, 3000);
+  } catch (err) {
+    unsub();
+    label.textContent = 'Failed: ' + err.message;
+    btn.disabled = false;
+  }
+});
+
+const HEIC_EXTS  = ['heic','heif'];
+const VIDEO_EXTS_LB = ['mov','mp4','m4v','avi','mkv','3gp'];
+
+async function openLightbox(photo) {
+  const lb       = document.getElementById('lightbox');
+  const lbImg    = document.getElementById('lightbox-img');
+  const lbVideo  = document.getElementById('lightbox-video');
+  const lbInfo   = document.getElementById('lightbox-info');
+  if (!lb) return;
+
+  const ext = (photo.filename.split('.').pop() || '').toLowerCase();
+  const isVideo = VIDEO_EXTS_LB.includes(ext);
+
+  // Reset both elements
+  lbImg.style.display   = 'none';
+  lbImg.src             = '';
+  lbVideo.style.display = 'none';
+  lbVideo.pause();
+  lbVideo.src           = '';
+
+  lb.classList.add('open');
+
+  if (isVideo) {
+    lbVideo.style.display = 'block';
+    // Encode path segments so spaces and special chars work in the local:// protocol
+    const encodedPath = photo.file_path.split('/').map(s => encodeURIComponent(s)).join('/');
+    lbVideo.src = `local://${encodedPath}`;
+    lbVideo.load();
+    lbVideo.play().catch(() => {}); // autoplay, ignore if blocked
+  } else if (HEIC_EXTS.includes(ext)) {
+    lbImg.style.display = 'block';
+    lbImg.alt = 'Converting…';
+    try {
+      const result = await window.tt.heicToJpeg({ filePath: photo.file_path });
+      lbImg.src = result.ok ? `local://${result.tempPath}` : '';
+      lbImg.alt = result.ok ? '' : 'Cannot display this HEIC file';
+    } catch {
+      lbImg.alt = 'Conversion failed';
+    }
+  } else {
+    lbImg.style.display = 'block';
+    lbImg.src = `local://${photo.file_path}`;
+    lbImg.alt = '';
+  }
+
+  // Info bar
+  const dateStr = photo.date_ts
+    ? new Date(photo.date_ts).toLocaleDateString('en', { year:'numeric', month:'short', day:'numeric' })
+    : null;
+  const gpsStr = photo.lat != null
+    ? `lat ${photo.lat.toFixed(4)}, lng ${photo.lng.toFixed(4)}`
+    : null;
+  const parts = [photo.filename];
+  if (dateStr) parts.push(dateStr);
+  if (gpsStr)  parts.push(gpsStr);
+  if (lbInfo)  lbInfo.textContent = parts.join('  ·  ');
+}
+
+function closeLightbox() {
+  const lb    = document.getElementById('lightbox');
+  const img   = document.getElementById('lightbox-img');
+  const video = document.getElementById('lightbox-video');
+  if (!lb) return;
+  lb.classList.remove('open');
+  if (img)   { img.src = ''; img.style.display = 'none'; }
+  if (video) { video.pause(); video.src = ''; video.style.display = 'none'; }
+}
+
+// Use mousedown + capture:true so the titlebar drag region cannot intercept
+document.getElementById('lightbox-close').addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeLightbox();
+}, true);
+document.getElementById('lightbox-back-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  closeLightbox();
+});
+document.getElementById('lightbox-backdrop').addEventListener('click', closeLightbox);
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeLicenceModal();
+  if (e.key === 'Escape') { closeLightbox(); closeLicenceModal(); }
+});
+
+// ── Copy abort ─────────────────────────────────────────────────────────────────
+
+document.getElementById('btn-copy-abort').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-copy-abort');
+  btn.disabled = true;
+  btn.textContent = 'Aborting…';
+  await window.tt.cancelCopy();
 });
 
 // ── Init ───────────────────────────────────────────────────────────────────────

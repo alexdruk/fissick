@@ -205,7 +205,8 @@ html, body {
    RESULTS VIEW
 ════════════════════════════════════════ */
 .results-header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 22px 36px 18px; }
-.results-title  { font-family: var(--serif); font-size: 24px; color: var(--ink); margin-bottom: 12px; }
+.results-title  { font-family: var(--serif); font-size: 24px; color: var(--ink); margin-bottom: 2px; }
+.results-subtitle { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .1em; text-transform: lowercase; margin-bottom: 12px; }
 .results-stats  { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .stat-pill       { display: flex; align-items: center; gap: 7px; background: var(--panel2); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; font-size: 12px; color: var(--mu); }
@@ -231,6 +232,7 @@ html, body {
 .tag-fixed  { background: var(--green-lt); color: var(--green); }
 .tag-fname  { background: var(--amber-lt); color: var(--amber); }
 .tag-none   { background: var(--red-lt);   color: var(--red); }
+.tag-found  { background: var(--blue-lt);  color: var(--blue); }
 .tag-gps    { background: var(--blue-lt);  color: var(--blue); }
 
 .list-footer { padding: 14px 36px; font-size: 12px; color: var(--dim); display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); }
@@ -392,6 +394,222 @@ html, body {
   color: var(--mu);
   white-space: nowrap;
 }
+#btn-copy-abort {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: var(--red-lt);
+  color: var(--red);
+  border: 1px solid var(--red-bdr);
+  border-radius: 4px;
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+#btn-copy-abort:hover { background: var(--red); color: #fff; }
+
+/* Date range filter row */
+#date-range-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 36px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.dr-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+.dr-input {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  outline: none;
+}
+.dr-input:focus { border-color: var(--acc); }
+.dr-picker-group { display: flex; gap: 4px; align-items: center; }
+.dr-select {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+  outline: none;
+  appearance: auto;
+}
+.dr-select:focus { border-color: var(--acc); }
+.dr-year  { width: 74px; }
+.dr-month { width: 62px; }
+.dr-day   { width: 52px; }
+
+.filter-bar-sep { width: 1px; background: var(--border); margin: 4px 4px; align-self: stretch; }
+.filter-ext-select { font-family: var(--mono); font-size: 10px; color: var(--ink); background: var(--bg); border: 1px solid var(--border2); border-radius: 4px; padding: 3px 6px; cursor: pointer; outline: none; max-width: 120px; }
+.filter-ext-select:focus { border-color: var(--acc); }
+
+/* Generate thumbnails bar */
+#thumb-gen-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 36px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+#thumb-progress-bar-track {
+  width: 120px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+#thumb-progress-bar-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 2px;
+  width: 0%;
+  transition: width .2s;
+}
+#thumb-progress-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mu);
+  white-space: nowrap;
+}
+.dr-btn {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border: 1px solid;
+}
+.dr-btn-apply { background: var(--acc-lt); color: var(--acc); border-color: var(--acc-bdr); }
+.dr-btn-apply:hover { background: var(--acc); color: #fff; }
+.dr-btn-clear { background: var(--panel2); color: var(--mu); border-color: var(--border2); }
+.dr-btn-clear:hover { background: var(--border2); color: var(--ink); }
+
+/* Lightbox overlay */
+#lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9000; /* must exceed titlebar z-index:10 and any other overlay */
+}
+#lightbox.open { display: block; }
+#lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.92);
+  cursor: zoom-out;
+  z-index: 1;
+}
+/* X button: direct child of #lightbox, highest z-index, no parent pointer-events issues */
+#lightbox-close {
+  position: fixed; /* fixed so it's never clipped by any parent */
+  top: 48px;       /* below macOS traffic lights (~28px) + padding */
+  right: 20px;
+  z-index: 9999;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.45);
+  background: rgba(0,0,0,.55);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s;
+  -webkit-app-region: no-drag; /* prevent titlebar drag region from stealing clicks */
+}
+#lightbox-close:hover { background: rgba(255,255,255,.2); }
+/* Inner column: sits above backdrop, below X button */
+#lightbox-inner {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 20px 16px;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+#lightbox-img {
+  max-width: 90vw;
+  max-height: 72vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 16px 60px rgba(0,0,0,.7);
+  display: none;
+  pointer-events: auto;
+}
+#lightbox-video {
+  max-width: 90vw;
+  max-height: 72vh;
+  border-radius: 4px;
+  box-shadow: 0 16px 60px rgba(0,0,0,.7);
+  display: none;
+  pointer-events: auto;
+  background: #000;
+}
+#lightbox-footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+  pointer-events: auto;
+  flex-shrink: 0;
+}
+#lightbox-info {
+  color: rgba(255,255,255,.85);
+  font-family: var(--mono);
+  font-size: 11px;
+  background: rgba(0,0,0,.55);
+  padding: 5px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+#lightbox-back-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.3);
+  color: rgba(255,255,255,.85);
+  border-radius: 4px;
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s;
+}
+#lightbox-back-btn:hover { background: rgba(255,255,255,.25); color: #fff; }
+.photo-thumb-video { flex-direction: column; gap: 4px; font-size: 20px; }
+.thumb-video-label { font-family: var(--mono); font-size: 8px; color: var(--dim); letter-spacing: .06em; }
 
 /* ── Checkbox selection ── */
 .photo-row { cursor: pointer; }
@@ -588,8 +806,21 @@ html, body {
     <div class="view" id="view-results">
       <div class="results-header">
         <button class="back-btn" id="btn-back-results">← Back</button>
-        <div class="results-title">Processing complete</div>
+        <div class="results-title">Results</div>
+        <div class="results-subtitle">processing complete</div>
         <div class="results-stats" id="results-stats-row"></div>
+      </div>
+
+      <!-- Generate Thumbnails button (moved to export bar area) -->
+      <div id="thumb-gen-bar">
+        <button id="btn-generate-thumbs" class="dr-btn dr-btn-apply"
+                title="Generate thumbnails for HEIC and video files">
+          🖼 Generate Thumbnails
+        </button>
+        <div id="thumb-progress-wrap" style="display:none">
+          <div id="thumb-progress-bar-track"><div id="thumb-progress-bar-fill"></div></div>
+          <span id="thumb-progress-label">Generating…</span>
+        </div>
       </div>
 
       <!-- Export toolbar -->
@@ -617,6 +848,7 @@ html, body {
             <div id="copy-progress-bar-fill"></div>
           </div>
           <span id="copy-progress-label">Copying…</span>
+          <button id="btn-copy-abort" title="Stop copying">Abort</button>
         </div>
       </div>
 
@@ -632,16 +864,46 @@ html, body {
 
       <!-- Filter / tab bar -->
       <div class="filter-bar">
-        <div class="filter-tab active" data-filter="all"
-             title="Show all photos from your archive">All</div>
-        <div class="filter-tab" data-filter="fixed"
-             title="Photos where the date (and GPS if available) were successfully written into the file — these are fully fixed">EXIF Fixed</div>
-        <div class="filter-tab" data-filter="unmatched"
-             title="Photos with no matching Google metadata file — they may still have a date from the filename, but no GPS">No Sidecar</div>
-        <div class="filter-tab" data-filter="failed"
-             title="Photos where no date could be found at all — they will appear undated in your library">No Date</div>
-        <!-- Map tab: hidden until location data is confirmed present -->
+        <div class="filter-tab active" data-filter="all">All</div>
+        <div class="filter-tab" data-filter="fixed">EXIF Fixed</div>
+        <div class="filter-tab" data-filter="unmatched">No Sidecar</div>
+        <div class="filter-tab" data-filter="failed">No Date</div>
+        <div class="filter-tab" data-filter="gps">Has GPS</div>
+        <div class="filter-bar-sep"></div>
+        <select id="ext-filter-select" class="dr-select filter-ext-select">
+          <option value="">All types</option>
+        </select>
         <div class="filter-tab" data-filter="map" id="tab-map" style="display:none">🗺 Map</div>
+      </div>
+
+      <!-- Date range filter row -->
+      <div id="date-range-bar">
+        <span class="dr-label">Date range</span>
+        <div class="dr-picker-group">
+          <select id="dr-from-year"  class="dr-select dr-year"><option value="">Year</option></select>
+          <select id="dr-from-month" class="dr-select dr-month">
+            <option value="">Month</option>
+            <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
+            <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
+            <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
+            <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
+          </select>
+          <select id="dr-from-day" class="dr-select dr-day"><option value="">Day</option></select>
+        </div>
+        <span class="dr-sep">→</span>
+        <div class="dr-picker-group">
+          <select id="dr-to-year"  class="dr-select dr-year"><option value="">Year</option></select>
+          <select id="dr-to-month" class="dr-select dr-month">
+            <option value="">Month</option>
+            <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
+            <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
+            <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
+            <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
+          </select>
+          <select id="dr-to-day" class="dr-select dr-day"><option value="">Day</option></select>
+        </div>
+        <button id="dr-apply" class="dr-btn dr-btn-apply">Apply</button>
+        <button id="dr-clear" class="dr-btn dr-btn-clear" style="display:none">Clear</button>
       </div>
 
       <!-- Select-all bar — shown above the photo list -->
@@ -694,6 +956,21 @@ html, body {
     <div class="modal-actions">
       <button class="modal-btn-secondary" id="btn-modal-cancel">Cancel</button>
       <button class="modal-btn-primary" id="btn-modal-activate">Activate</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lightbox overlay -->
+<div id="lightbox">
+  <div id="lightbox-backdrop"></div>
+  <!-- X button is a direct child of #lightbox, outside everything else -->
+  <button id="lightbox-close" title="Close (Esc)">✕</button>
+  <div id="lightbox-inner">
+    <img id="lightbox-img" alt="">
+    <video id="lightbox-video" controls playsinline preload="metadata"></video>
+    <div id="lightbox-footer">
+      <div id="lightbox-info"></div>
+      <button id="lightbox-back-btn">← Back to photos</button>
     </div>
   </div>
 </div>

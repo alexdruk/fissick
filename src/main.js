@@ -11,6 +11,7 @@ const fs = require('fs');
 let mainWindow;
 let db;
 let activeWorker         = null; // photosWorker
+let isProcessing         = false;
 let activeLocationWorker = null; // locationWorker — spawned reactively from manifest event
 
 // Tracks whether both workers have finished so run_complete is only set once
@@ -20,11 +21,63 @@ let locationWorkerSpawned = false;
 
 // ── Protocol registration must happen before app.whenReady ───────────────────
 // Allows renderer to display local images via  local:///absolute/path/to/file.jpg
+const { net } = require('electron');
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'local', privileges: { secure: true, supportFetchAPI: true, stream: true, bypassCSP: true } }
+]);
+
 app.on('ready', () => {
-  protocol.registerFileProtocol('local', (request, callback) => {
-    // Strip the protocol prefix and decode URI components (spaces, unicode, etc.)
+  protocol.handle('local', (request) => {
     const filePath = decodeURIComponent(request.url.replace('local://', ''));
-    callback({ path: filePath });
+
+    // Check if file exists
+    let stat;
+    try { stat = fs.statSync(filePath); } catch {
+      return new Response('Not found', { status: 404 });
+    }
+    const fileSize = stat.size;
+
+    // Determine MIME type for video files so the browser knows what codec to use
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes = {
+      '.mov': 'video/quicktime', '.mp4': 'video/mp4', '.m4v': 'video/mp4',
+      '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska',
+      '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.heic': 'image/heic',
+    };
+    const mimeType = mimeTypes[ext] || 'application/octet-stream';
+
+    // Handle Range requests — required for video seeking
+    const rangeHeader = request.headers.get('Range');
+    if (rangeHeader) {
+      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const end   = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+        const chunkSize = end - start + 1;
+        const stream = fs.createReadStream(filePath, { start, end });
+        return new Response(stream, {
+          status: 206,
+          headers: {
+            'Content-Range':  `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges':  'bytes',
+            'Content-Length': String(chunkSize),
+            'Content-Type':   mimeType,
+          },
+        });
+      }
+    }
+
+    // Non-range request — serve the whole file
+    const stream = fs.createReadStream(filePath);
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        'Content-Length':  String(fileSize),
+        'Content-Type':    mimeType,
+        'Accept-Ranges':   'bytes',
+      },
+    });
   });
 });
 
@@ -110,10 +163,38 @@ function initDb() {
   return db;
 }
 
+function ensureThumbDir() {
+  const thumbDir = path.join(app.getPath('userData'), 'fossick-thumbs');
+  try { fs.mkdirSync(thumbDir, { recursive: true }); } catch {}
+  return thumbDir;
+}
+
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
   initDb();
+  // Migrate: add thumbnail_path column if this is an existing DB without it
+  try { db.exec('ALTER TABLE photos ADD COLUMN thumbnail_path TEXT'); } catch {}
   createWindow();
+
+  // Intercept window close — show confirmation if processing is active
+  mainWindow.on('close', (e) => {
+    if (isProcessing) {
+      e.preventDefault();
+      dialog.showMessageBox(mainWindow, {
+        type:      'warning',
+        buttons:   ['Keep Processing', 'Quit Anyway'],
+        defaultId: 0,
+        title:     'Processing in progress',
+        message:   'Fossick is still processing your archive.',
+        detail:    'Quitting now will interrupt the process. Photos already processed will be saved.',
+      }).then(({ response }) => {
+        if (response === 1) {
+          isProcessing = false;
+          app.quit();
+        }
+      });
+    }
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -134,6 +215,7 @@ app.on('window-all-closed', () => {
 function checkAllDone() {
   if (workersDone.photos && (!locationWorkerSpawned || workersDone.location)) {
     db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_complete', '1')").run();
+    isProcessing = false;
   }
 }
 
@@ -255,6 +337,10 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
   // Licence check — get trial limit before spawning worker
   const licenceRow = db.prepare("SELECT value FROM settings WHERE key = 'licence_key'").get();
   const licensed   = !!licenceRow?.value;
+  const devMode    = process.env.FOSSICK_DEV === '1';
+  if (devMode) console.log('[dev] Trial limit disabled — running in dev mode');
+
+  isProcessing = true;
 
   activeWorker = new Worker(workerPath, {
     workerData: {
@@ -262,7 +348,8 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
       extractedFolder: zipPaths && zipPaths.length > 0 ? null : (extractedFolder || null),
       tempDir:         extractTo || '',
       dbPath:          db.name,
-      trialLimit:      licensed ? null : 100,  // null = unlimited
+      trialLimit:      (licensed || devMode) ? null : 100,  // null = unlimited
+      thumbDir:        ensureThumbDir(),
     },
   });
 
@@ -323,28 +410,35 @@ ipcMain.handle('process:cancel', () => {
     activeLocationWorker = null;
     cancelled = true;
   }
+  isProcessing = false;
   return { cancelled };
 });
 
 // Query photos with pagination and filtering
-ipcMain.handle('db:get-photos', (_event, { offset = 0, limit = 60, filter = 'all' } = {}) => {
-  const conditions = {
-    all:       '',
-    matched:   'WHERE sidecar_found = 1',
-    unmatched: 'WHERE sidecar_found = 0',
-    fixed:     'WHERE exif_written = 1',
-    failed:    'WHERE exif_written = 0 AND sidecar_found = 0',
+ipcMain.handle('db:get-photos', (_event, { offset = 0, limit = 60, filter = 'all', dateFrom = null, dateTo = null, ext = null } = {}) => {
+  const baseConditions = {
+    all:       [],
+    matched:   ['sidecar_found = 1'],
+    unmatched: ['sidecar_found = 0'],
+    fixed:     ['exif_written = 1'],
+    failed:    ['exif_written = 0', 'sidecar_found = 0'],
+    gps:       ['lat IS NOT NULL'],
   };
 
-  const where = conditions[filter] || '';
+  const clauses = [...(baseConditions[filter] || [])];
+  const params  = [];
+  if (dateFrom != null) { clauses.push('date_ts >= ?'); params.push(dateFrom); }
+  if (dateTo   != null) { clauses.push('date_ts <= ?'); params.push(dateTo); }
+  if (ext      != null) { clauses.push("LOWER(filename) LIKE ?"); params.push('%.' + ext.toLowerCase()); }
+  const where = clauses.length ? 'WHERE ' + clauses.join(' AND ') : '';
 
   const photos = db.prepare(`
     SELECT * FROM photos ${where}
     ORDER BY date_ts ASC NULLS LAST, filename ASC
     LIMIT ? OFFSET ?
-  `).all(limit, offset);
+  `).all(...params, limit, offset);
 
-  const total = db.prepare(`SELECT COUNT(*) as n FROM photos ${where}`).get().n;
+  const total = db.prepare(`SELECT COUNT(*) as n FROM photos ${where}`).get(...params).n;
 
   return { photos, total };
 });
@@ -438,16 +532,22 @@ ipcMain.handle('db:reset', () => {
 
 // Fetch file paths only (no thumbnails) for a given filter — used for bulk selection.
 // Returns up to 200k paths; typical Takeout is 10k–50k.
-ipcMain.handle('db:get-photo-paths', (_event, { filter = 'all' } = {}) => {
-  const conditions = {
-    all:       '',
-    fixed:     'WHERE exif_written = 1',
-    unmatched: 'WHERE sidecar_found = 0',
-    failed:    'WHERE exif_written = 0 AND sidecar_found = 0',
+ipcMain.handle('db:get-photo-paths', (_event, { filter = 'all', dateFrom = null, dateTo = null, ext = null } = {}) => {
+  const baseConditions = {
+    all:       [],
+    fixed:     ['exif_written = 1'],
+    unmatched: ['sidecar_found = 0'],
+    failed:    ['exif_written = 0', 'sidecar_found = 0'],
+    gps:       ['lat IS NOT NULL'],
   };
-  const where = conditions[filter] || '';
+  const clauses = [...(baseConditions[filter] || [])];
+  const params  = [];
+  if (dateFrom != null) { clauses.push('date_ts >= ?'); params.push(dateFrom); }
+  if (dateTo   != null) { clauses.push('date_ts <= ?'); params.push(dateTo); }
+  if (ext      != null) { clauses.push("LOWER(filename) LIKE ?"); params.push('%.' + ext.toLowerCase()); }
+  const where = clauses.length ? 'WHERE ' + clauses.join(' AND ') : '';
   return db.prepare(`SELECT file_path FROM photos ${where} ORDER BY date_ts ASC NULLS LAST, filename ASC`)
-           .all()
+           .all(...params)
            .map(r => r.file_path);
 });
 
@@ -589,6 +689,10 @@ ipcMain.handle('export:photos-csv', async (_event, { selectedPaths } = {}) => {
 });
 
 // Export 3: Copy fixed files to a user-selected folder
+// ── Copy abort flag ──────────────────────────────────────────────────────────
+let copyAbortRequested = false;
+ipcMain.handle('export:cancel-copy', () => { copyAbortRequested = true; });
+
 ipcMain.handle('export:copy-fixed', async (_event, { selectedPaths } = {}) => {
   // Determine which files to copy
   let files;
@@ -624,9 +728,11 @@ ipcMain.handle('export:copy-fixed', async (_event, { selectedPaths } = {}) => {
 
   // Run async so we can stream progress back without blocking
   ;(async () => {
+    copyAbortRequested = false;
     let copied = 0, skipped = 0, failed = 0;
 
     for (const file of files) {
+      if (copyAbortRequested) break;
       const dest = path.join(destDir, file.filename);
       try {
         await fs.promises.copyFile(file.file_path, dest);
@@ -646,7 +752,7 @@ ipcMain.handle('export:copy-fixed', async (_event, { selectedPaths } = {}) => {
     }
 
     if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('export:copy-done', { copied, skipped, failed, total, destDir });
+      mainWindow.webContents.send('export:copy-done', { copied, skipped, failed, total, destDir, aborted: copyAbortRequested });
     }
   })();
 
@@ -701,6 +807,114 @@ ipcMain.handle('export:map-html', async () => {
     console.error('[export:map-html]', err);
     return { ok: false, error: err.message };
   }
+});
+
+// ── HEIC → JPEG converter ─────────────────────────────────────────────────────
+// Use ffmpeg to convert HEIC → JPEG for display in the renderer.
+// ffmpeg handles HEIC, HEIF, and also extracts first frame from MOV/MP4.
+ipcMain.handle('util:heic-to-jpeg', async (_event, { filePath }) => {
+  try {
+    const tempPath = path.join(app.getPath('temp'), 'fossick_preview_' + Date.now() + '.jpg');
+    const { execFileSync } = require('child_process');
+    execFileSync('ffmpeg', ['-i', filePath, '-frames:v', '1', '-update', '1', '-y', tempPath], {
+      timeout: 20000,
+      stdio: 'pipe', // suppress ffmpeg console output
+    });
+    if (!fs.existsSync(tempPath) || fs.statSync(tempPath).size < 100) {
+      return { ok: false, error: 'ffmpeg produced empty output' };
+    }
+    return { ok: true, tempPath };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// ── Generate thumbnails (post-processing pass) ────────────────────────────────
+ipcMain.handle('util:generate-thumbnails', async () => {
+  const thumbDir = ensureThumbDir();
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const execFileAsync = promisify(execFile);
+
+  let sharp = null;
+  try { sharp = require('sharp'); } catch {}
+
+  const photos = db.prepare(
+    `SELECT id, file_path, filename FROM photos WHERE thumbnail_path IS NULL`
+  ).all();
+
+  const total = photos.length;
+  let done = 0, generated = 0, failed = 0;
+  const update = db.prepare(`UPDATE photos SET thumbnail_path = ? WHERE id = ?`);
+
+  // ffmpeg handles HEIC, HEIF, MOV, MP4 and everything else
+  // sharp handles JPG, PNG, WebP (faster than ffmpeg for standard formats)
+  const FFMPEG_EXTS = ['heic','heif','mov','mp4','m4v','avi','mkv','3gp','avif'];
+  const SHARP_EXTS  = ['jpg','jpeg','png','gif','webp','bmp','tiff','tif'];
+
+  async function processOne(photo) {
+    const ext = (photo.filename.split('.').pop() || '').toLowerCase();
+    const safeBase  = photo.file_path.replace(/[/\\:]/g, '_').slice(-120);
+    const thumbPath = path.join(thumbDir, safeBase + '_t.jpg');
+
+    try {
+      if (FFMPEG_EXTS.includes(ext)) {
+        await execFileAsync('ffmpeg', [
+          '-i', photo.file_path,
+          '-frames:v', '1',
+          '-vf', 'scale=280:280:force_original_aspect_ratio=decrease',
+          '-update', '1',
+          '-y', thumbPath,
+        ], { timeout: 20000 });
+        if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
+          update.run(thumbPath, photo.id);
+          generated++;
+        } else { failed++; }
+      } else if (SHARP_EXTS.includes(ext) && sharp) {
+        await sharp(photo.file_path)
+          .resize(280, 280, { fit: 'inside', withoutEnlargement: true })
+          .rotate()
+          .jpeg({ quality: 72 })
+          .toFile(thumbPath);
+        update.run(thumbPath, photo.id);
+        generated++;
+      }
+    } catch { failed++; }
+
+    done++;
+    if (done % 50 === 0 || done === total) {
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('util:thumb-progress', { done, total, generated, failed });
+      }
+    }
+  }
+
+  // Process in parallel batches — 8 concurrent ffmpeg processes
+  const CONCURRENCY = 8;
+  for (let i = 0; i < photos.length; i += CONCURRENCY) {
+    await Promise.all(photos.slice(i, i + CONCURRENCY).map(processOne));
+  }
+
+  return { done, total, generated, failed };
+});
+
+// Returns distinct file extensions present in the photos table for the ext filter dropdown
+ipcMain.handle('db:get-extensions', () => {
+  // Fetch all filenames, extract the true last extension in JS
+  // (SQLite lacks REVERSE() in some builds, so we do it here)
+  const rows = db.prepare(`SELECT filename FROM photos WHERE filename LIKE '%.%'`).all();
+  const counts = {};
+  for (const { filename } of rows) {
+    const parts = filename.split('.');
+    const ext = parts[parts.length - 1].toLowerCase();
+    // Only keep real extensions: 2-5 chars, no hyphens/spaces/dots
+    if (ext.length >= 2 && ext.length <= 5 && /^[a-z0-9]+$/.test(ext)) {
+      counts[ext] = (counts[ext] || 0) + 1;
+    }
+  }
+  return Object.entries(counts)
+    .map(([ext, n]) => ({ ext, n }))
+    .sort((a, b) => b.n - a.n);
 });
 
 // Build the self-contained HTML string
