@@ -2260,13 +2260,6 @@ document.getElementById('btn-trips-back').addEventListener('click', () => Trips.
     await window.tt.computeTrips({ homeZones });
   }
 
-  function _esc(s) {
-    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
-
-  return { onTabActivated, reset, openHomeZoneModal, closeHomeZoneModal, confirmHomeZones };
-})();
-
 // ── Home zone modal wiring ──────────────────────────────────────────────────────
 document.getElementById('btn-compute-trips').addEventListener('click', () => Trips.openHomeZoneModal());
 document.getElementById('btn-recompute-trips').addEventListener('click', async () => {
