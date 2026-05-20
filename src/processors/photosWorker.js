@@ -343,6 +343,9 @@ async function run() {
     // HEIC/video via ffmpeg can take 1-2s each; running separately means EXIF
     // completes at full speed and thumbnails run as a background phase.
     if (thumbDir) {
+      // Ensure thumb directory exists — sips (unlike sharp) doesn't create it
+      fs.mkdirSync(thumbDir, { recursive: true });
+
       const SHARP_EXTS  = new Set(['jpg','jpeg','png','gif','webp','bmp','tiff','tif','avif']);
       const FFMPEG_EXTS = new Set(['heic','heif','mov','mp4','m4v','avi','mkv','3gp']);
 
