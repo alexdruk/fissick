@@ -8,7 +8,7 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "test-matcher": "node tests/matcher.test.js",
-    "autocommit": "chokidar 'src/**' 'tests/**' 'forge.config.js' 'package.json' --ignore 'node_modules/**' --ignore '.git/**' --ignore 'out/**' --ignore '*.db' --debounce 2000 -c 'git add -A && git commit -m \"Auto-commit: {now}\" || true'"
+    "autocommit": "chokidar 'src/**' 'tests/**' 'forge.config.js' 'package.json' --ignore 'node_modules/**' --ignore '.git/**' --ignore 'out/**' --ignore '*.db' --debounce 2000 -c 'git add -A && git diff --cached --quiet || git commit -m \"Auto-commit: $(date -u +%Y-%m-%dT%H:%M:%SZ)\"'"
   },
   "keywords": [],
   "author": "",
