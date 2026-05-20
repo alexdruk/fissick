@@ -900,20 +900,8 @@ ipcMain.handle('export:map-html', async () => {
 
 // ── HEIC → JPEG converter ─────────────────────────────────────────────────────
 // Use ffmpeg to convert HEIC → JPEG for display in the renderer.
-// ffmpeg handles HEIC, HEIF, and also extracts first frame from MOV/MP4.
-
-// Resolve ffmpeg path at startup — Electron strips PATH so bare 'ffmpeg' may not resolve.
-const FFMPEG_BIN = (() => {
-  const candidates = [
-    '/opt/homebrew/bin/ffmpeg',
-    '/usr/local/bin/ffmpeg',
-    '/usr/bin/ffmpeg',
-  ];
-  for (const p of candidates) {
-    try { if (fs.existsSync(p)) return p; } catch {}
-  }
-  return 'ffmpeg'; // PATH fallback
-})();
+// ffmpeg-static bundles the binary — no system install needed.
+const FFMPEG_BIN = require('ffmpeg-static');
 
 ipcMain.handle('util:heic-to-jpeg', async (_event, { filePath }) => {
   try {
@@ -1704,5 +1692,3 @@ ipcMain.handle('licence:deactivate', () => {
   db.prepare("DELETE FROM settings WHERE key = 'licence_key'").run();
   return { ok: true };
 });
-// test change Wed May 20 15:53:22 CEST 2026
-// autocommit test Wed May 20 15:54:04 CEST 2026
