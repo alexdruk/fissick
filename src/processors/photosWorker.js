@@ -389,10 +389,8 @@ async function run() {
         } else if (FFMPEG_EXTS.has(ext)) {
           const isHeic = ext === 'heic' || ext === 'heif';
 
-          // On macOS, use sips for HEIC/HEIF — it's built-in and always has
-          // HEIC support. ffmpeg-static ships without libheif so it can't
-          // decode HEIC even though the call succeeds silently.
           if (isHeic && process.platform === 'darwin') {
+            // sips handles HEIC natively on macOS
             try {
               await execFileAsync('sips', [
                 '-s', 'format', 'jpeg',
@@ -408,8 +406,30 @@ async function run() {
             } catch (err) {
               console.log(`[fossick] thumb failed (sips) ${photo.filename}: ${err.message}`);
             }
+          } else if (process.platform === 'darwin') {
+            // Videos on macOS: use qlmanage (Quick Look) — built-in, no dependencies
+            // qlmanage writes to a directory, naming the file <basename>.jpg
+            try {
+              const thumbBasename = path.basename(thumbPath, '_t.jpg');
+              const qlOutDir = path.dirname(thumbPath);
+              await execFileAsync('qlmanage', [
+                '-t', '-s', '280', '-o', qlOutDir, photo.file_path,
+              ], { timeout: 30000 });
+              // qlmanage names the output: original_filename.jpg or .png
+              const qlOut = path.join(qlOutDir, path.basename(photo.file_path) + '.jpg');
+              const qlOutPng = path.join(qlOutDir, path.basename(photo.file_path) + '.png');
+              const qlResult = fs.existsSync(qlOut) ? qlOut : (fs.existsSync(qlOutPng) ? qlOutPng : null);
+              if (qlResult && fs.statSync(qlResult).size > 100) {
+                fs.renameSync(qlResult, thumbPath);
+                updateThumb.run(thumbPath, photo.id);
+              } else {
+                console.log(`[fossick] thumb empty (qlmanage) ${photo.filename}`);
+              }
+            } catch (err) {
+              console.log(`[fossick] thumb failed (qlmanage) ${photo.filename}: ${err.message}`);
+            }
           } else {
-            // Videos and non-macOS HEIC: use ffmpeg-static
+            // Non-macOS: use ffmpeg-static
             try {
               await execFileAsync(FFMPEG_BIN, [
                 '-i', photo.file_path,
