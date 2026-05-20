@@ -901,13 +901,27 @@ ipcMain.handle('export:map-html', async () => {
 // ── HEIC → JPEG converter ─────────────────────────────────────────────────────
 // Use ffmpeg to convert HEIC → JPEG for display in the renderer.
 // ffmpeg handles HEIC, HEIF, and also extracts first frame from MOV/MP4.
+
+// Resolve ffmpeg path at startup — Electron strips PATH so bare 'ffmpeg' may not resolve.
+const FFMPEG_BIN = (() => {
+  const candidates = [
+    '/opt/homebrew/bin/ffmpeg',
+    '/usr/local/bin/ffmpeg',
+    '/usr/bin/ffmpeg',
+  ];
+  for (const p of candidates) {
+    try { if (fs.existsSync(p)) return p; } catch {}
+  }
+  return 'ffmpeg'; // PATH fallback
+})();
+
 ipcMain.handle('util:heic-to-jpeg', async (_event, { filePath }) => {
   try {
     const tempPath = path.join(app.getPath('temp'), 'fossick_preview_' + Date.now() + '.jpg');
     const { execFileSync } = require('child_process');
-    execFileSync('ffmpeg', ['-i', filePath, '-frames:v', '1', '-update', '1', '-y', tempPath], {
+    execFileSync(FFMPEG_BIN, ['-i', filePath, '-frames:v', '1', '-update', '1', '-y', tempPath], {
       timeout: 20000,
-      stdio: 'pipe', // suppress ffmpeg console output
+      stdio: 'pipe',
     });
     if (!fs.existsSync(tempPath) || fs.statSync(tempPath).size < 100) {
       return { ok: false, error: 'ffmpeg produced empty output' };
@@ -948,7 +962,7 @@ ipcMain.handle('util:generate-thumbnails', async () => {
 
     try {
       if (FFMPEG_EXTS.includes(ext)) {
-        await execFileAsync('ffmpeg', [
+        await execFileAsync(FFMPEG_BIN, [
           '-i', photo.file_path,
           '-frames:v', '1',
           '-vf', 'scale=280:280:force_original_aspect_ratio=decrease',
@@ -1690,4 +1704,3 @@ ipcMain.handle('licence:deactivate', () => {
   db.prepare("DELETE FROM settings WHERE key = 'licence_key'").run();
   return { ok: true };
 });
-// test change Wed May 20 14:33:22 CEST 2026
