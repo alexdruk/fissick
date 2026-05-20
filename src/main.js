@@ -1692,3 +1692,9 @@ ipcMain.handle('licence:deactivate', () => {
   db.prepare("DELETE FROM settings WHERE key = 'licence_key'").run();
   return { ok: true };
 });
+// autocommit test Wed May 20 16:02:50 CEST 2026
+// direct autocommit test Wed May 20 16:03:27 CEST 2026
+// autocommit js test Wed May 20 16:05:46 CEST 2026
+// chokidar detection test Wed May 20 16:06:23 CEST 2026
+// direct node autocommit test Wed May 20 16:06:48 CEST 2026
+// autocommit ready test Wed May 20 16:07:29 CEST 2026
