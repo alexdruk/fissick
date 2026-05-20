@@ -1705,3 +1705,4 @@ ipcMain.handle('licence:deactivate', () => {
   return { ok: true };
 });
 // test change Wed May 20 15:53:22 CEST 2026
+// autocommit test Wed May 20 15:54:04 CEST 2026
