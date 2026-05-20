@@ -206,8 +206,10 @@ async function run() {
     let trialLimitMessageSent = false;
     const startMs = Date.now();
 
-    const FLUSH_EVERY = 50;
-    let pendingRows = [];
+    const FLUSH_EVERY    = 200;   // DB flush interval
+    const LOG_EVERY      = 500;   // terminal + UI progress interval
+    let lastLogAt        = 0;
+    let pendingRows      = [];
 
     function flushPending() {
       if (pendingRows.length === 0) return;
@@ -216,22 +218,15 @@ async function run() {
     }
 
     function reportProgress() {
-      const elapsed   = Date.now() - startMs;
-      const rate      = processed / (elapsed / 1000);
-      const remaining = uniqueMedia.length - processed;
-      const etaSecs   = rate > 0 ? Math.round(remaining / rate) : null;
-      const percent   = Math.round((processed / uniqueMedia.length) * 100);
-      // Log to terminal every 10%
-      if (percent % 10 === 0) {
-        const eta = etaSecs ? ` — ETA ${Math.round(etaSecs / 60)}m` : '';
-        console.log(`[fossick] ${percent}% — ${processed.toLocaleString()} / ${uniqueMedia.length.toLocaleString()} photos${eta}`);
-      }
-      send('progress', {
-        processed, total: uniqueMedia.length,
-        fixed, matched, failed,
-        percent,
-        etaSecs,
-      });
+      if (processed - lastLogAt < LOG_EVERY && processed < uniqueMedia.length) return;
+      lastLogAt = processed;
+      const elapsed  = Date.now() - startMs;
+      const rate     = processed / (elapsed / 1000);
+      const etaSecs  = rate > 0 ? Math.round((uniqueMedia.length - processed) / rate) : null;
+      const percent  = Math.round((processed / uniqueMedia.length) * 100);
+      const eta      = etaSecs ? ` — ETA ${Math.round(etaSecs / 60)}m` : '';
+      console.log(`[fossick] ${percent}% — ${processed.toLocaleString()} / ${uniqueMedia.length.toLocaleString()} photos${eta}`);
+      send('progress', { processed, total: uniqueMedia.length, fixed, matched, failed, percent, etaSecs });
     }
 
     await withPool(uniqueMedia, CONCURRENCY, async (mediaPath) => {
@@ -318,7 +313,7 @@ async function run() {
 
       pendingRows.push(row);
       if (pendingRows.length >= FLUSH_EVERY) flushPending();
-      if (processed % FLUSH_EVERY === 0 || processed === uniqueMedia.length) reportProgress();
+      if (processed % LOG_EVERY === 0 || processed === uniqueMedia.length) reportProgress();
     });
 
     flushPending();
@@ -365,20 +360,50 @@ async function run() {
               .jpeg({ quality: 72 })
               .toFile(thumbPath);
             updateThumb.run(thumbPath, photo.id);
-          } catch {}
+          } catch (err) {
+            console.log(`[fossick] thumb failed (sharp) ${photo.filename}: ${err.message}`);
+          }
         } else if (FFMPEG_EXTS.has(ext)) {
-          try {
-            await execFileAsync(FFMPEG_BIN, [
-              '-i', photo.file_path,
-              '-frames:v', '1',
-              '-vf', 'scale=280:280:force_original_aspect_ratio=decrease',
-              '-update', '1',
-              '-y', thumbPath,
-            ], { timeout: 20000 });
-            if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
-              updateThumb.run(thumbPath, photo.id);
+          const isHeic = ext === 'heic' || ext === 'heif';
+
+          // On macOS, use sips for HEIC/HEIF — it's built-in and always has
+          // HEIC support. ffmpeg-static ships without libheif so it can't
+          // decode HEIC even though the call succeeds silently.
+          if (isHeic && process.platform === 'darwin') {
+            try {
+              await execFileAsync('sips', [
+                '-s', 'format', 'jpeg',
+                '-z', '280', '280',
+                photo.file_path,
+                '--out', thumbPath,
+              ], { timeout: 20000 });
+              if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
+                updateThumb.run(thumbPath, photo.id);
+              } else {
+                console.log(`[fossick] thumb empty (sips) ${photo.filename}`);
+              }
+            } catch (err) {
+              console.log(`[fossick] thumb failed (sips) ${photo.filename}: ${err.message}`);
             }
-          } catch {}
+          } else {
+            // Videos and non-macOS HEIC: use ffmpeg-static
+            try {
+              await execFileAsync(FFMPEG_BIN, [
+                '-i', photo.file_path,
+                '-frames:v', '1',
+                '-vf', 'scale=280:280:force_original_aspect_ratio=decrease',
+                '-update', '1',
+                '-y', thumbPath,
+              ], { timeout: 20000 });
+              if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
+                updateThumb.run(thumbPath, photo.id);
+              } else {
+                console.log(`[fossick] thumb empty (ffmpeg) ${photo.filename}`);
+              }
+            } catch (err) {
+              console.log(`[fossick] thumb failed (ffmpeg) ${photo.filename}: ${err.message}`);
+            }
+          }
         }
 
         thumbDone++;
