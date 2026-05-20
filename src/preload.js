@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('tt', {
   // ── Processing ─────────────────────────────────────────────────────────────
   startProcessing:  (opts) => ipcRenderer.invoke('process:start', opts),
   cancelProcessing: ()     => ipcRenderer.invoke('process:cancel'),
+  pauseProcessing:  ()     => ipcRenderer.invoke('process:pause'),
+  resumeProcessing: ()     => ipcRenderer.invoke('process:resume'),
 
   // ── Database queries ───────────────────────────────────────────────────────
   getPhotos:        (opts) => ipcRenderer.invoke('db:get-photos', opts),
@@ -65,5 +67,38 @@ contextBridge.exposeInMainWorld('tt', {
   getLicenceStatus:  ()     => ipcRenderer.invoke('licence:get-status'),
   activateLicence:   (opts) => ipcRenderer.invoke('licence:activate', opts),
   deactivateLicence: ()     => ipcRenderer.invoke('licence:deactivate'),
+
+  // ── Working folder ─────────────────────────────────────────────────────────
+  getWorkingFolder:    ()      => ipcRenderer.invoke('settings:get-working-folder'),
+  setWorkingFolder:    (opts)  => ipcRenderer.invoke('settings:set-working-folder', opts),
+  browseWorkingFolder: ()      => ipcRenderer.invoke('settings:browse-working-folder'),
+
+  // ── Trips ───────────────────────────────────────────────────────────────────
+  getClusters:      ()     => ipcRenderer.invoke('trips:get-clusters'),
+  getAllClusters:   ()     => ipcRenderer.invoke('trips:get-all-clusters'),
+  geocodeBatch:     (opts) => ipcRenderer.invoke('trips:geocode-batch', opts),
+  computeTrips:     (opts) => ipcRenderer.invoke('trips:compute', opts),
+  getTrips:         (opts) => ipcRenderer.invoke('trips:get-trips', opts),
+  getTripDetail:    (opts) => ipcRenderer.invoke('trips:get-trip-detail', opts),
+  getTripThumbs:    (opts) => ipcRenderer.invoke('trips:get-trip-thumbs', opts),
+  resetTrips:       ()     => ipcRenderer.invoke('trips:reset'),
+
+  onTripsEvent: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('trips:event', handler);
+    return () => ipcRenderer.removeListener('trips:event', handler);
+  },
+
+  onGeocodeResult: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('trips:geocode-result', handler);
+    return () => ipcRenderer.removeListener('trips:geocode-result', handler);
+  },
+
+  onTripNameUpdate: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('trips:name-update', handler);
+    return () => ipcRenderer.removeListener('trips:name-update', handler);
+  },
 
 });

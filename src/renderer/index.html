@@ -163,6 +163,39 @@ html, body {
 ════════════════════════════════════════ */
 #view-processing { padding: 28px 48px 40px; }
 
+/* Pause / Abort controls */
+#proc-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 4px;
+  flex-wrap: wrap;
+}
+.proc-ctrl-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-radius: 5px;
+  padding: 7px 16px;
+  cursor: pointer;
+  border: 1px solid;
+  transition: background .12s;
+}
+.proc-ctrl-pause  { background: var(--amber-lt); color: var(--amber); border-color: var(--amber-border); }
+.proc-ctrl-pause:hover  { background: var(--amber); color: #fff; }
+.proc-ctrl-resume { background: var(--green-lt);  color: var(--green);  border-color: var(--green-border); }
+.proc-ctrl-resume:hover { background: var(--green); color: #fff; }
+.proc-ctrl-abort  { background: var(--red-lt);   color: var(--red);   border-color: var(--red-border); }
+.proc-ctrl-abort:hover  { background: var(--red); color: #fff; }
+#proc-paused-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--amber);
+  letter-spacing: .03em;
+}
+
 .back-btn { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--mu); background: transparent; border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; cursor: pointer; display: inline-block; margin-bottom: 20px; }
 .back-btn:hover { border-color: var(--border2); color: var(--ink); }
 
@@ -508,6 +541,124 @@ html, body {
 .dr-btn-clear { background: var(--panel2); color: var(--mu); border-color: var(--border2); }
 .dr-btn-clear:hover { background: var(--border2); color: var(--ink); }
 
+/* Settings panel */
+#settings-panel {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+}
+#settings-panel.open { display: block; }
+#settings-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  cursor: pointer;
+  z-index: 1;
+}
+#settings-box {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 400px;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.settings-title {
+  font-family: var(--serif);
+  font-size: 18px;
+  color: var(--ink);
+}
+#settings-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+#settings-close:hover { color: var(--ink); background: var(--panel2); }
+.settings-section {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-section-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--acc);
+  margin-bottom: 6px;
+}
+.settings-section-desc {
+  font-size: 12.5px;
+  color: var(--mu);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.wf-current {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.wf-path {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink);
+  word-break: break-all;
+  line-height: 1.5;
+}
+.wf-meta {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  margin-top: 4px;
+}
+.wf-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.wf-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .05em;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.wf-btn-primary { background: var(--acc-lt); color: var(--acc); border-color: var(--acc-bdr); }
+.wf-btn-primary:hover { background: var(--acc); color: #fff; }
+.wf-btn-secondary { background: var(--panel2); color: var(--mu); border-color: var(--border2); }
+.wf-btn-secondary:hover { background: var(--border2); color: var(--ink); }
+.wf-status {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+.wf-status.ok { background: var(--green-lt); color: var(--green); border: 1px solid var(--green-border); }
+.wf-status.err { background: var(--red-lt); color: var(--red); border: 1px solid var(--red-border); }
+.settings-paths { display: flex; flex-direction: column; gap: 6px; }
+.sp-row { display: flex; gap: 8px; align-items: baseline; }
+.sp-label { font-family: var(--mono); font-size: 9px; color: var(--dim); width: 80px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .06em; }
+.sp-val { font-family: var(--mono); font-size: 10px; color: var(--mu); word-break: break-all; line-height: 1.5; }
+
 /* Lightbox overlay */
 #lightbox {
   display: none;
@@ -704,6 +855,262 @@ html, body {
 ::-webkit-scrollbar       { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* ════════════════════════════════════════
+   TRIPS PANEL
+════════════════════════════════════════ */
+#trips-panel {
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+#trips-panel.visible { display: flex; }
+
+#trips-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trips-empty-inner {
+  text-align: center;
+  max-width: 420px;
+  padding: 0 24px;
+}
+.trips-empty-icon  { font-size: 48px; margin-bottom: 16px; line-height: 1; }
+.trips-empty-title { font-family: var(--serif); font-size: 22px; color: var(--ink); margin-bottom: 8px; }
+.trips-empty-sub   { font-size: 13px; color: var(--mu); line-height: 1.75; margin-bottom: 24px; }
+.trips-cta-btn     { background: var(--ink); color: #f5f0e8; border: none; border-radius: var(--r); padding: 12px 24px; font-family: var(--serif); font-size: 16px; cursor: pointer; }
+.trips-cta-btn:hover { background: #2a2518; }
+.trips-recompute-btn { font-family: var(--mono); font-size: 10px; color: var(--mu); background: transparent; border: 1px solid var(--border); border-radius: 4px; padding: 5px 12px; cursor: pointer; margin-top: 10px; }
+.trips-recompute-btn:hover { border-color: var(--border2); color: var(--ink); }
+
+#trips-computing {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trips-computing-inner {
+  text-align: center;
+  max-width: 400px;
+  width: 100%;
+  padding: 0 24px;
+}
+.trips-computing-msg { font-family: var(--serif); font-size: 18px; color: var(--ink); margin-bottom: 16px; }
+.trips-prog-wrap { background: var(--panel2); border-radius: 3px; height: 5px; overflow: hidden; margin-bottom: 8px; }
+.trips-prog-bar  { height: 100%; background: var(--acc); border-radius: 3px; width: 0%; transition: width .5s ease; }
+.trips-computing-sub { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+
+#trips-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0 48px;
+}
+.trips-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 28px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--panel);
+  position: sticky; top: 0; z-index: 2;
+}
+.trips-list-count { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+
+/* ── Trip card (list view — text only, no inline map) ── */
+.trip-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .08s;
+  user-select: none;
+}
+.trip-card:hover { background: var(--panel2); }
+.trip-card:last-child { border-bottom: none; }
+.tc-flag  { font-size: 26px; line-height: 1; flex-shrink: 0; width: 32px; text-align: center; }
+.tc-body  { flex: 1; min-width: 0; }
+.tc-name  { font-family: var(--serif); font-size: 16px; color: var(--ink); margin-bottom: 2px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tc-meta  { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-bottom: 5px; }
+.tc-stats { display: flex; gap: 6px; flex-wrap: wrap; }
+.tc-stat  {
+  font-family: var(--mono); font-size: 9px; color: var(--mu);
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 2px 7px;
+}
+.tc-arrow { font-size: 16px; color: var(--dim); flex-shrink: 0; }
+
+/* ── Trip detail panel ── */
+#trips-detail {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+#trips-detail.visible { display: flex; }
+#trips-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+#btn-trips-back {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+  background: transparent; color: var(--mu);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 5px 12px; cursor: pointer; flex-shrink: 0;
+  transition: border-color .1s, color .1s;
+}
+#btn-trips-back:hover { border-color: var(--border2); color: var(--ink); }
+#trips-detail-title-wrap { flex: 1; min-width: 0; }
+#trips-detail-title { font-family: var(--serif); font-size: 17px; color: var(--ink); display: block;
+                      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#trips-detail-meta  { font-family: var(--mono); font-size: 10px; color: var(--dim); display: block; margin-top: 1px; }
+#trips-detail-map   { flex: 1; min-height: 0; }
+
+/* ── Map pin styles (trip detail) ── */
+.tdm-pin {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--acc); border: 2px solid #8a3a10;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9px; font-weight: 600;
+  color: #fff; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+.tdm-tip { font-family: 'DM Mono', monospace; font-size: 10px; }
+.tdm-popup { text-align: center; padding: 4px; }
+.tdm-popup-img { display: block; max-width: 200px; max-height: 150px;
+                 border-radius: 3px; margin: 0 auto 5px; object-fit: cover; }
+.tdm-popup-name { font-family: 'DM Mono', monospace; font-size: 9.5px; color: var(--mu);
+                  word-break: break-all; max-width: 200px; }
+.tdm-popup-date { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--dim); margin-top: 2px; }
+.tdm-popup-wrap .leaflet-popup-content-wrapper { padding: 0; border-radius: 6px; overflow: hidden; }
+.tdm-popup-wrap .leaflet-popup-content { margin: 0; padding: 8px; }
+
+/* ════════════════════════════════════════
+   HOME ZONE MODAL
+════════════════════════════════════════ */
+#home-zone-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(28,26,20,.65);
+  z-index: 300;
+  align-items: center;
+  justify-content: center;
+}
+#home-zone-modal.open { display: flex; }
+.hz-modal-box {
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  width: 860px;
+  max-width: 96vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+.hz-modal-header { padding: 20px 24px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.hz-modal-header h2 { font-family: var(--serif); font-size: 21px; color: var(--ink); margin-bottom: 5px; }
+.hz-modal-header p  { font-size: 12.5px; color: var(--mu); line-height: 1.6; }
+.hz-modal-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+#hz-map { flex: 1; min-height: 360px; }
+#hz-list { width: 248px; flex-shrink: 0; overflow-y: auto; border-left: 1px solid var(--border); }
+.hz-list-hint { font-family: var(--mono); font-size: 9px; color: var(--dim); padding: 10px 14px 6px; letter-spacing: .04em; text-transform: uppercase; }
+.hz-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; cursor: pointer;
+  border-bottom: 1px solid var(--border); transition: background .08s;
+}
+.hz-item:last-child { border-bottom: none; }
+.hz-item:hover    { background: var(--panel2); }
+.hz-item.checked  { background: var(--acc-lt); }
+.hz-num {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--panel2); border: 1.5px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  flex-shrink: 0; color: var(--ink);
+  transition: background .1s, border-color .1s, color .1s;
+}
+.hz-item.checked .hz-num { background: var(--acc); border-color: var(--acc); color: #fff; }
+.hz-item-info { flex: 1; min-width: 0; }
+.hz-item-name  { font-size: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; line-height: 1.3; }
+.hz-item-name.loading { color: var(--dim); font-style: italic; font-weight: 400; }
+.hz-item-count { font-family: var(--mono); font-size: 9px; color: var(--dim); margin-top: 1px; }
+.hz-modal-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 11px 20px; border-top: 1px solid var(--border);
+  flex-shrink: 0; background: var(--panel2);
+}
+.hz-attribution { font-family: var(--mono); font-size: 9px; color: var(--dim); }
+.hz-attribution a { color: var(--acc); text-decoration: none; }
+.hz-modal-actions { display: flex; gap: 8px; }
+.hz-btn-cancel {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+  background: transparent; color: var(--mu);
+  border: 1px solid var(--border); border-radius: 4px; padding: 6px 14px; cursor: pointer;
+}
+.hz-btn-cancel:hover { border-color: var(--border2); color: var(--ink); }
+.hz-btn-confirm {
+  font-family: var(--sans); font-size: 12.5px; font-weight: 500;
+  background: var(--acc); color: #fff; border: none; border-radius: 4px;
+  padding: 7px 18px; cursor: pointer; transition: background .1s;
+}
+.hz-btn-confirm:disabled { opacity: .4; cursor: default; pointer-events: none; }
+.hz-btn-confirm:not(:disabled):hover { background: #a04e24; }
+.hz-pin {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--panel); border: 2px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  color: var(--ink); cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,.18);
+  transition: background .1s, border-color .1s, color .1s;
+}
+.hz-pin.checked { background: var(--acc); border-color: var(--acc); color: #fff; }
+
+/* Country group in home-zone modal */
+.hz-country-group { border-bottom: 2px solid var(--border); }
+.hz-country-group:last-child { border-bottom: none; }
+.hz-country-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px; cursor: pointer;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 1;
+  transition: background .08s;
+  user-select: none;
+}
+.hz-country-header:hover { background: var(--border); }
+.hz-country-arrow { font-size: 9px; color: var(--dim); width: 10px; flex-shrink: 0; }
+.hz-country-info  { flex: 1; min-width: 0; }
+.hz-country-name  { font-family: var(--serif); font-size: 14px; color: var(--ink); display: block; line-height: 1.3; }
+.hz-country-meta  { font-family: var(--mono); font-size: 9px; color: var(--dim); }
+.hz-country-items.collapsed { display: none; }
+
+/* Sort select */
+.trips-sort-wrap { display: flex; align-items: center; gap: 6px; }
+.trips-sort-label { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .06em; text-transform: uppercase; }
+.trips-sort-select {
+  font-family: var(--mono); font-size: 10px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--border2);
+  border-radius: 4px; padding: 4px 8px; cursor: pointer; outline: none;
+}
+.trips-sort-select:focus { border-color: var(--acc); }
+.trip-lightbox-popup .trip-photo-popup-inner img { max-width: 240px; max-height: 180px; }
 </style>
 </head>
 <body>
@@ -714,6 +1121,7 @@ html, body {
     <span class="tb-logo">Fissick<span class="tb-dot">.</span></span>
     <span style="font-family:var(--mono);font-size:9px;color:var(--dim);margin-left:8px">v22</span>
     <span class="tb-phase" id="tb-phase">Import</span>
+    <button id="btn-settings" title="Settings" style="-webkit-app-region:no-drag;background:none;border:none;cursor:pointer;color:var(--dim);font-size:14px;padding:4px 8px;border-radius:4px;margin-left:8px;line-height:1" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--dim)'">⚙</button>
   </div>
 
   <!-- Sidebar -->
@@ -729,6 +1137,8 @@ html, body {
     <div class="sb-stat-row"><span class="sb-stat-label">No sidecar</span><span class="sb-stat-value amber" id="sb-unmatched">—</span></div>
     <div class="sb-stat-row"><span class="sb-stat-label">With GPS</span><span class="sb-stat-value" id="sb-gps">—</span></div>
     <div class="sb-stat-row"><span class="sb-stat-label">Locations</span><span class="sb-stat-value blue" id="sb-locations">—</span></div>
+    <div class="sb-divider"></div>
+    <div class="sb-item" id="sb-trips" style="display:none"><span>🌍</span> Trips</div>
   </div>
 
   <!-- Main area: exactly fills the space right of sidebar, below titlebar -->
@@ -789,6 +1199,15 @@ html, body {
         <span id="progress-eta"></span>
       </div>
 
+      <!-- Pause / Abort controls -->
+      <div id="proc-controls">
+        <button id="btn-pause-resume" class="proc-ctrl-btn proc-ctrl-pause">⏸ Pause</button>
+        <button id="btn-abort-processing" class="proc-ctrl-btn proc-ctrl-abort">⏹ Abort</button>
+        <span id="proc-paused-label" style="display:none">
+          ⏸ Paused — current file will finish, then processing stops.
+        </span>
+      </div>
+
       <div class="live-stats">
         <div class="live-stat"><div class="live-stat-val" id="stat-processed">0</div><div class="live-stat-label">Processed</div></div>
         <div class="live-stat"><div class="live-stat-val green" id="stat-fixed">0</div><div class="live-stat-label">EXIF Fixed</div></div>
@@ -812,6 +1231,7 @@ html, body {
       </div>
 
       <!-- Generate Thumbnails button (moved to export bar area) -->
+      <!-- Generate Thumbnails — disabled: thumbnails now generated during processing
       <div id="thumb-gen-bar">
         <button id="btn-generate-thumbs" class="dr-btn dr-btn-apply"
                 title="Generate thumbnails for HEIC and video files">
@@ -822,6 +1242,7 @@ html, body {
           <span id="thumb-progress-label">Generating…</span>
         </div>
       </div>
+      -->
 
       <!-- Export toolbar -->
       <div id="export-bar">
@@ -874,6 +1295,7 @@ html, body {
           <option value="">All types</option>
         </select>
         <div class="filter-tab" data-filter="map" id="tab-map" style="display:none">🗺 Map</div>
+        <div class="filter-tab" data-filter="trips" id="tab-trips" style="display:none">🌍 Trips</div>
       </div>
 
       <!-- Date range filter row -->
@@ -940,6 +1362,58 @@ html, body {
 
       </div><!-- /map-panel -->
 
+      <!-- Trips panel -->
+      <div id="trips-panel">
+
+        <div id="trips-empty">
+          <div class="trips-empty-inner">
+            <div class="trips-empty-icon">🌍</div>
+            <h3 class="trips-empty-title">Discover your trips</h3>
+            <p class="trips-empty-sub">Fossick will analyse your location history and group it into discrete trips — combining your GPS routes and photos into a single view for each journey.</p>
+            <button id="btn-compute-trips" class="trips-cta-btn">Compute Trips</button>
+          </div>
+        </div>
+
+        <div id="trips-computing" style="display:none">
+          <div class="trips-computing-inner">
+            <div class="trips-computing-msg" id="trips-computing-msg">Analysing location data…</div>
+            <div class="trips-prog-wrap"><div class="trips-prog-bar" id="trips-prog-bar"></div></div>
+            <div class="trips-computing-sub" id="trips-computing-sub"></div>
+          </div>
+        </div>
+
+        <div id="trips-list" style="display:none">
+          <div class="trips-list-header">
+            <span class="trips-list-count" id="trips-list-count"></span>
+            <div class="trips-sort-wrap">
+              <label class="trips-sort-label" for="trips-sort-select">Sort</label>
+              <select id="trips-sort-select" class="trips-sort-select">
+                <option value="chrono">Chronological ↑</option>
+                <option value="chrono-desc">Chronological ↓</option>
+                <option value="country">By name</option>
+                <option value="photos">Most photos first</option>
+                <option value="distance">Furthest first</option>
+              </select>
+            </div>
+            <button class="trips-recompute-btn" id="btn-recompute-trips">↺ Recompute</button>
+          </div>
+          <!-- trip cards appended here by JS -->
+        </div>
+
+        <!-- Trip detail — full-panel map for a single trip -->
+        <div id="trips-detail">
+          <div id="trips-detail-header">
+            <button id="btn-trips-back">← Back to trips</button>
+            <div id="trips-detail-title-wrap">
+              <span id="trips-detail-title"></span>
+              <span id="trips-detail-meta"></span>
+            </div>
+          </div>
+          <div id="trips-detail-map"></div>
+        </div>
+
+      </div><!-- /trips-panel -->
+
     </div><!-- /view-results -->
 
   </div><!-- /main -->
@@ -960,11 +1434,45 @@ html, body {
   </div>
 </div>
 
+<!-- Settings panel -->
+<div id="settings-panel">
+  <div id="settings-backdrop"></div>
+  <div id="settings-box">
+    <div class="settings-header">
+      <div class="settings-title">Settings</div>
+      <button id="settings-close">✕</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-label">Working Folder</div>
+      <div class="settings-section-desc">Where Fossick stores its database, thumbnails, and extracted archives. Move this to a drive with more free space if your boot drive is full.</div>
+
+      <div id="wf-current" class="wf-current">
+        <div class="wf-path" id="wf-path-label">Loading…</div>
+        <div class="wf-meta" id="wf-meta-label"></div>
+      </div>
+
+      <div class="wf-actions">
+        <button id="btn-wf-browse" class="wf-btn wf-btn-primary">📁 Choose folder…</button>
+        <button id="btn-wf-clear" class="wf-btn wf-btn-secondary" style="display:none">Reset to default</button>
+      </div>
+      <div id="wf-status" class="wf-status" style="display:none"></div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-label">Current paths</div>
+      <div class="settings-paths">
+        <div class="sp-row"><span class="sp-label">Database</span><span class="sp-val" id="sp-db">—</span></div>
+        <div class="sp-row"><span class="sp-label">Thumbnails</span><span class="sp-val" id="sp-thumbs">—</span></div>
+        <div class="sp-row"><span class="sp-label">Free space</span><span class="sp-val" id="sp-free">—</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Lightbox overlay -->
 <div id="lightbox">
   <div id="lightbox-backdrop"></div>
-  <!-- X button is a direct child of #lightbox, outside everything else -->
-  <button id="lightbox-close" title="Close (Esc)">✕</button>
   <div id="lightbox-inner">
     <img id="lightbox-img" alt="">
     <video id="lightbox-video" controls playsinline preload="metadata"></video>
@@ -975,9 +1483,34 @@ html, body {
   </div>
 </div>
 
+<!-- Home zone confirmation modal — must be BEFORE scripts so getElementById finds it -->
+<div id="home-zone-modal">
+  <div class="hz-modal-box">
+    <div class="hz-modal-header">
+      <h2>Where is home?</h2>
+      <p>These are your most-photographed locations. Check <strong>only the places you actually lived</strong> — past and present addresses. Cities you visited often should <em>not</em> be checked — those become trips.</p>
+    </div>
+    <div class="hz-modal-body">
+      <div id="hz-map"></div>
+      <div id="hz-list">
+        <div class="hz-list-hint">Select home zones</div>
+      </div>
+    </div>
+    <div class="hz-modal-footer">
+      <span class="hz-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap contributors</a></span>
+      <div class="hz-modal-actions">
+        <button class="hz-btn-cancel" id="btn-hz-cancel">Cancel</button>
+        <button class="hz-btn-confirm" id="btn-hz-confirm" disabled>Confirm &amp; Compute Trips</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin="anonymous"></script>
 <script src="locationMap.js"></script>
+<script src="tripsMap.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

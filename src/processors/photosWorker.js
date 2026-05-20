@@ -18,6 +18,11 @@ const Database = require('better-sqlite3');
 let sharp = null;
 try { sharp = require('sharp'); } catch {}
 
+// ffmpeg for HEIC/video thumbnails — same approach as the main-process Generate Thumbnails button
+const { execFile }   = require('child_process');
+const { promisify }  = require('util');
+const execFileAsync  = promisify(execFile);
+
 const { extractZips }       = require('./zipExtractor');
 const { detectSchemas }     = require('./schemaDetector');
 const {
@@ -64,9 +69,23 @@ async function withPool(items, concurrency, fn) {
 // ── Main pipeline ─────────────────────────────────────────────────────────────
 
 async function run() {
-  const { zipPaths, extractedFolder, tempDir, dbPath, trialLimit, thumbDir } = workerData;
+  const { zipPaths, extractedFolder, tempDir, dbPath, trialLimit, thumbDir, controlSab } = workerData;
   const isLimited = trialLimit != null;
   if (isLimited) status('processing', `Trial mode: EXIF writing limited to first ${trialLimit} photos.`);
+
+  // Control byte: 0=run, 1=paused, 2=abort
+  const ctrl = controlSab ? new Int8Array(controlSab) : null;
+
+  // Poll the control byte — blocks (yields event loop) while paused
+  async function checkControl() {
+    if (!ctrl) return false; // no control = always run
+    // Spin-wait while paused — yield every 200ms to avoid 100% CPU
+    while (Atomics.load(ctrl, 0) === 1) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+    // Return true if abort was requested
+    return Atomics.load(ctrl, 0) === 2;
+  }
 
   const db = new Database(dbPath);
 
@@ -207,6 +226,10 @@ async function run() {
     }
 
     await withPool(uniqueMedia, CONCURRENCY, async (mediaPath) => {
+      // Check pause/abort before processing each file
+      const shouldAbort = await checkControl();
+      if (shouldAbort) return; // skip this file — abort in progress
+
       const filename = path.basename(mediaPath);
       let dateTs = null, lat = null, lng = null;
       let exifWritten = 0, sidecarFound = 0;
@@ -277,21 +300,35 @@ async function run() {
       const row = buildRow(mediaPath, filename, dateTs, lat, lng, exifWritten, sidecarFound, dateSource, exifError);
 
       // ── Thumbnail generation ────────────────────────────────────────────
-      // HEIC/HEIF skipped — sharp can't decode them without libheif.
-      // The "Generate Thumbnails" button uses nativeImage in the main process.
-      if (sharp && thumbDir) {
-        const ext = filename.split(".").pop()?.toLowerCase();
-        const SHARP_EXTS = ["jpg","jpeg","png","gif","webp","bmp","tiff","tif","avif"];
-        if (SHARP_EXTS.includes(ext)) {
-          const safeBase = mediaPath.replace(/[/\\:]/g, "_").slice(-120);
-          const thumbPath = path.join(thumbDir, safeBase + "_t.jpg");
+      // sharp handles standard formats; ffmpeg handles HEIC/HEIF and video.
+      if (thumbDir) {
+        const ext = filename.split('.').pop()?.toLowerCase() || '';
+        const SHARP_EXTS  = ['jpg','jpeg','png','gif','webp','bmp','tiff','tif','avif'];
+        const FFMPEG_EXTS = ['heic','heif','mov','mp4','m4v','avi','mkv','3gp'];
+        const safeBase  = mediaPath.replace(/[/\\:]/g, '_').slice(-120);
+        const thumbPath = path.join(thumbDir, safeBase + '_t.jpg');
+
+        if (sharp && SHARP_EXTS.includes(ext)) {
           try {
             await sharp(mediaPath)
-              .resize(280, 280, { fit: "inside", withoutEnlargement: true })
+              .resize(280, 280, { fit: 'inside', withoutEnlargement: true })
               .rotate()
               .jpeg({ quality: 72 })
               .toFile(thumbPath);
             row.thumbnailPath = thumbPath;
+          } catch {}
+        } else if (FFMPEG_EXTS.includes(ext)) {
+          try {
+            await execFileAsync('ffmpeg', [
+              '-i', mediaPath,
+              '-frames:v', '1',
+              '-vf', 'scale=280:280:force_original_aspect_ratio=decrease',
+              '-update', '1',
+              '-y', thumbPath,
+            ], { timeout: 20000 });
+            if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
+              row.thumbnailPath = thumbPath;
+            }
           } catch {}
         }
       }

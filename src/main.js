@@ -8,11 +8,64 @@ const Database = require('better-sqlite3');
 const os = require('os');
 const fs = require('fs');
 
+// ── Working folder prefs ──────────────────────────────────────────────────────
+// Stored in ~/.fossick-prefs.json — separate from the SQLite DB because the
+// DB itself may live inside the working folder.
+function getPrefsPath() {
+  return path.join(app.getPath('home'), '.fossick-prefs.json');
+}
+function readPrefs() {
+  try { return JSON.parse(fs.readFileSync(getPrefsPath(), 'utf8')); } catch { return {}; }
+}
+function writePrefs(prefs) {
+  try { fs.writeFileSync(getPrefsPath(), JSON.stringify(prefs, null, 2), 'utf8'); } catch (e) {
+    console.error('[prefs] write failed:', e.message);
+  }
+}
+function getWorkingFolder() {
+  return readPrefs().workingFolder || null;
+}
+function getDbPath() {
+  const wf = getWorkingFolder();
+  if (wf) {
+    try { fs.mkdirSync(wf, { recursive: true }); } catch {}
+    return path.join(wf, 'fissick.db');
+  }
+  return path.join(app.getPath('userData'), 'fissick.db');
+}
+
 let mainWindow;
 let db;
 let activeWorker         = null; // photosWorker
 let isProcessing         = false;
 let activeLocationWorker = null; // locationWorker — spawned reactively from manifest event
+let activeTripsWorker    = null; // tripsWorker — spawned on demand from renderer
+
+// ── Haversine distance (km) — used by cluster detection ──────────────────────
+function _haversine(lat1, lng1, lat2, lng2) {
+  const R  = 6371;
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a  = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Shared control byte for pause/resume — passed to workers via workerData.
+// 0 = run, 1 = paused, 2 = abort
+// Using SharedArrayBuffer so main can set it and worker reads it atomically.
+let controlBuffer = null; // Int8Array view — allocated fresh per run
+function newControlBuffer() {
+  const sab = new SharedArrayBuffer(1);
+  controlBuffer = new Int8Array(sab);
+  Atomics.store(controlBuffer, 0, 0); // start in 'run' state
+  return sab;
+}
+function setControlFlag(val) { if (controlBuffer) Atomics.store(controlBuffer, 0, val); }
+const CTRL_RUN   = 0;
+const CTRL_PAUSE = 1;
+const CTRL_ABORT = 2;
 
 // Tracks whether both workers have finished so run_complete is only set once
 // both are truly done. Reset at the start of every process:start call.
@@ -117,7 +170,7 @@ function createWindow() {
 
 // ── Database init ─────────────────────────────────────────────────────────────
 function initDb() {
-  const dbPath = path.join(app.getPath('userData'), 'fissick.db');
+  const dbPath = getDbPath();
   db = new Database(dbPath);
 
   db.exec(`
@@ -164,7 +217,8 @@ function initDb() {
 }
 
 function ensureThumbDir() {
-  const thumbDir = path.join(app.getPath('userData'), 'fossick-thumbs');
+  const base = getWorkingFolder() || app.getPath('userData');
+  const thumbDir = path.join(base, 'fossick-thumbs');
   try { fs.mkdirSync(thumbDir, { recursive: true }); } catch {}
   return thumbDir;
 }
@@ -174,6 +228,25 @@ app.whenReady().then(() => {
   initDb();
   // Migrate: add thumbnail_path column if this is an existing DB without it
   try { db.exec('ALTER TABLE photos ADD COLUMN thumbnail_path TEXT'); } catch {}
+  // Migrate: trips feature tables
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS trips (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT,
+      start_ts    INTEGER,
+      end_ts      INTEGER,
+      center_lat  REAL,
+      center_lng  REAL,
+      photo_count INTEGER DEFAULT 0,
+      point_count INTEGER DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_trips_start ON trips(start_ts);
+  `);
+  try { db.exec('ALTER TABLE photos ADD COLUMN trip_id INTEGER REFERENCES trips(id)'); } catch {}
+  // Migrations for new trip fields
+  try { db.exec('ALTER TABLE trips ADD COLUMN country_code TEXT'); } catch {}
+  try { db.exec('ALTER TABLE trips ADD COLUMN country TEXT'); } catch {}
+  try { db.exec('ALTER TABLE trips ADD COLUMN distance_km REAL'); } catch {}
   createWindow();
 
   // Intercept window close — show confirmation if processing is active
@@ -205,6 +278,7 @@ app.on('window-all-closed', () => {
   if (db) db.close();
   if (activeWorker)         activeWorker.terminate();
   if (activeLocationWorker) activeLocationWorker.terminate();
+  if (activeTripsWorker)    activeTripsWorker.terminate();
   app.quit();
 });
 
@@ -319,17 +393,18 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
     if (extractedFolder) {
       extractTo = extractedFolder; // user designated this as the destination
     } else {
-      const docsDir = app.getPath('documents');
-      // Clean up previous auto-extraction folders
+      // Use working folder if set, otherwise fall back to Documents
+      const baseDir = getWorkingFolder() || app.getPath('documents');
+      // Clean up previous auto-extraction folders in the same base dir
       try {
-        const entries = fs.readdirSync(docsDir);
+        const entries = fs.readdirSync(baseDir);
         for (const e of entries) {
           if (e.startsWith('fissick-extracted-')) {
-            fs.rmSync(path.join(docsDir, e), { recursive: true, force: true });
+            fs.rmSync(path.join(baseDir, e), { recursive: true, force: true });
           }
         }
       } catch {}
-      extractTo = path.join(docsDir, 'fissick-extracted-' + Date.now());
+      extractTo = path.join(baseDir, 'fissick-extracted-' + Date.now());
     }
     fs.mkdirSync(extractTo, { recursive: true });
   }
@@ -341,6 +416,7 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
   if (devMode) console.log('[dev] Trial limit disabled — running in dev mode');
 
   isProcessing = true;
+  const controlSab = newControlBuffer(); // fresh control buffer for this run
 
   activeWorker = new Worker(workerPath, {
     workerData: {
@@ -350,6 +426,7 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
       dbPath:          db.name,
       trialLimit:      (licensed || devMode) ? null : 100,  // null = unlimited
       thumbDir:        ensureThumbDir(),
+      controlSab,      // SharedArrayBuffer for pause/resume/abort
     },
   });
 
@@ -412,6 +489,18 @@ ipcMain.handle('process:cancel', () => {
   }
   isProcessing = false;
   return { cancelled };
+});
+
+// Pause — set control byte to 1; worker polls and stops between files
+ipcMain.handle('process:pause', () => {
+  setControlFlag(CTRL_PAUSE);
+  return { paused: true };
+});
+
+// Resume — set control byte back to 0
+ipcMain.handle('process:resume', () => {
+  setControlFlag(CTRL_RUN);
+  return { resumed: true };
 });
 
 // Query photos with pagination and filtering
@@ -1201,6 +1290,364 @@ function _dateStamp() {
 // ── Licence ───────────────────────────────────────────────────────────────────
 const TRIAL_LIMIT = 100;
 
+// ── Trips ──────────────────────────────────────────────────────────────────────
+
+// Grid-based density clustering to find candidate home zones.
+ipcMain.handle('trips:get-clusters', () => {
+  // Determine data source — same logic as tripsWorker
+  const { n: locCount } = db.prepare(`SELECT COUNT(*) AS n FROM locations WHERE lat IS NOT NULL`).get();
+  const usePhotos = locCount === 0;
+
+  const gridRows = usePhotos
+    ? db.prepare(`
+        SELECT ROUND(lat, 2) AS glat, ROUND(lng, 2) AS glng,
+               COUNT(*) AS cnt, AVG(lat) AS clat, AVG(lng) AS clng
+        FROM photos WHERE lat IS NOT NULL AND lng IS NOT NULL
+        GROUP BY glat, glng ORDER BY cnt DESC LIMIT 2000
+      `).all()
+    : db.prepare(`
+        SELECT ROUND(lat, 2) AS glat, ROUND(lng, 2) AS glng,
+               COUNT(*) AS cnt, AVG(lat) AS clat, AVG(lng) AS clng
+        FROM locations WHERE lat IS NOT NULL AND lng IS NOT NULL
+        GROUP BY glat, glng ORDER BY cnt DESC LIMIT 2000
+      `).all();
+
+  if (!gridRows.length) return { clusters: [] };
+
+  // Merge nearby grid cells into single clusters.
+  // 5km merge radius: keeps distinct cities separate while grouping
+  // photos from the same neighbourhood into one candidate.
+  const MERGE_KM = 5;
+  const merged   = [];
+  for (const row of gridRows) {
+    let absorbed = false;
+    for (const m of merged) {
+      if (_haversine(row.clat, row.clng, m.clat, m.clng) <= MERGE_KM) {
+        const total = m.cnt + row.cnt;
+        m.clat = (m.clat * m.cnt + row.clat * row.cnt) / total;
+        m.clng = (m.clng * m.cnt + row.clng * row.cnt) / total;
+        m.cnt  = total;
+        absorbed = true;
+        break;
+      }
+    }
+    if (!absorbed) merged.push({ clat: row.clat, clng: row.clng, cnt: row.cnt });
+  }
+
+  merged.sort((a, b) => b.cnt - a.cnt);
+
+  // No hard cap on candidates, but return top 10 by default with a hasMore flag.
+  // The renderer shows a "Show all N" link when hasMore is true.
+  const allClusters = merged
+    .filter(c => c.cnt >= 10)
+    .map((c, i) => ({ index: i, lat: c.clat, lng: c.clng, count: c.cnt, name: null }));
+
+  const limit   = 10;
+  const hasMore = allClusters.length > limit;
+
+  return { clusters: allClusters.slice(0, limit), hasMore, total: allClusters.length };
+});
+
+// Return ALL clusters (called when user clicks "Show all N locations")
+ipcMain.handle('trips:get-all-clusters', () => {
+  ipcMain.emit('trips:get-clusters-internal');  // reuse same logic via a wrapper
+  // Simpler: just call the cluster logic inline with no limit
+  const { n: locCount } = db.prepare(`SELECT COUNT(*) AS n FROM locations WHERE lat IS NOT NULL`).get();
+  const usePhotos = locCount === 0;
+  const gridRows  = usePhotos
+    ? db.prepare(`SELECT ROUND(lat,2) AS glat,ROUND(lng,2) AS glng,COUNT(*) AS cnt,AVG(lat) AS clat,AVG(lng) AS clng FROM photos WHERE lat IS NOT NULL AND lng IS NOT NULL GROUP BY glat,glng ORDER BY cnt DESC LIMIT 2000`).all()
+    : db.prepare(`SELECT ROUND(lat,2) AS glat,ROUND(lng,2) AS glng,COUNT(*) AS cnt,AVG(lat) AS clat,AVG(lng) AS clng FROM locations WHERE lat IS NOT NULL AND lng IS NOT NULL GROUP BY glat,glng ORDER BY cnt DESC LIMIT 2000`).all();
+  if (!gridRows.length) return { clusters: [] };
+  const MERGE_KM = 5;
+  const merged = [];
+  for (const row of gridRows) {
+    let absorbed = false;
+    for (const m of merged) {
+      if (_haversine(row.clat, row.clng, m.clat, m.clng) <= MERGE_KM) {
+        const t = m.cnt + row.cnt;
+        m.clat = (m.clat*m.cnt + row.clat*row.cnt)/t;
+        m.clng = (m.clng*m.cnt + row.clng*row.cnt)/t;
+        m.cnt  = t; absorbed = true; break;
+      }
+    }
+    if (!absorbed) merged.push({ clat: row.clat, clng: row.clng, cnt: row.cnt });
+  }
+  merged.sort((a,b) => b.cnt - a.cnt);
+  const clusters = merged.filter(c => c.cnt >= 10)
+    .map((c,i) => ({ index: i, lat: c.clat, lng: c.clng, count: c.cnt, name: null }));
+  return { clusters, hasMore: false, total: clusters.length };
+});
+
+// Reverse geocode a batch of points via Nominatim. Results stream back via events.
+ipcMain.handle('trips:geocode-batch', async (_event, { points }) => {
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  let rateLimitNeeded = false;
+
+  for (const p of points) {
+    const key    = `geocode:${parseFloat(p.lat).toFixed(4)}:${parseFloat(p.lng).toFixed(4)}`;
+    const cached = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key);
+
+    let name, country;
+    if (cached) {
+      const parsed = JSON.parse(cached.value);
+      name    = parsed.name;
+      country = parsed.country || null;
+    } else {
+      if (rateLimitNeeded) await delay(1150);
+      rateLimitNeeded = true;
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${p.lat}&lon=${p.lng}&format=json`,
+          { headers: { 'User-Agent': 'Fossick/1.0' }, signal: AbortSignal.timeout(8000) }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const addr  = data.address || {};
+          const city  = addr.city || addr.town || addr.village || addr.county || addr.state || '';
+          country     = addr.country || null;
+          name        = [city, country].filter(Boolean).join(', ')
+                        || `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`;
+        } else {
+          name    = `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`;
+          country = null;
+        }
+        db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`)
+          .run(key, JSON.stringify({ name, country }));
+      } catch {
+        name    = `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`;
+        country = null;
+      }
+    }
+
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('trips:geocode-result', { index: p.index, name, country });
+    }
+  }
+  return { ok: true };
+});
+
+// Spawn tripsWorker with confirmed home zones.
+ipcMain.handle('trips:compute', async (_event, { homeZones }) => {
+  if (activeTripsWorker) { activeTripsWorker.terminate(); activeTripsWorker = null; }
+
+  // Persist home zones so distance_km can be computed during geocoding
+  db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`)
+    .run('home_zones', JSON.stringify(homeZones));
+
+  const workerPath = path.join(__dirname, 'processors', 'tripsWorker.js');
+
+  activeTripsWorker = new Worker(workerPath, {
+    workerData: { dbPath: db.name, homeZones },
+  });
+
+  activeTripsWorker.on('message', async (msg) => {
+    if (msg.type === 'trips-done') {
+      activeTripsWorker = null;
+      if (msg.needsGeocode && msg.needsGeocode.length > 0) {
+        _geocodeTripNames(msg.needsGeocode).catch(() => {});
+      }
+    }
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('trips:event', msg);
+    }
+  });
+
+  activeTripsWorker.on('error', (err) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('trips:event', { type: 'trips-error', message: err.message });
+    }
+    activeTripsWorker = null;
+  });
+
+  activeTripsWorker.on('exit', () => { activeTripsWorker = null; });
+
+  return { started: true };
+});
+
+// Background geocoding: name, country_code, country, distance_km for each trip.
+async function _geocodeTripNames(items) {
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+
+  // Read persisted home zones for distance computation
+  const hzRow    = db.prepare(`SELECT value FROM settings WHERE key = 'home_zones'`).get();
+  const homeZones = hzRow ? JSON.parse(hzRow.value) : [];
+
+  const update = db.prepare(
+    `UPDATE trips SET name = ?, country_code = ?, country = ?, distance_km = ? WHERE id = ?`
+  );
+
+  let first = true;
+  for (const item of items) {
+    const key    = `geocode:${parseFloat(item.lat).toFixed(4)}:${parseFloat(item.lng).toFixed(4)}`;
+    const cached = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key);
+
+    let name, countryCode = null, country = null;
+
+    if (cached) {
+      const p   = JSON.parse(cached.value);
+      name        = p.name;
+      countryCode = p.countryCode || null;
+      country     = p.country     || null;
+    } else {
+      if (!first) await delay(1150);
+      first = false;
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${item.lat}&lon=${item.lng}&format=json`,
+          { headers: { 'User-Agent': 'Fossick/1.0' }, signal: AbortSignal.timeout(8000) }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const addr  = data.address || {};
+          const city  = addr.city || addr.town || addr.village || addr.county || addr.state || '';
+          country     = addr.country || null;
+          countryCode = (data.address?.country_code || '').toUpperCase() || null;
+          name        = [city, country].filter(Boolean).join(', ') || null;
+        }
+        if (name) db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`)
+          .run(key, JSON.stringify({ name, country, countryCode }));
+      } catch {}
+    }
+
+    // Distance from nearest home zone
+    const distKm = homeZones.length > 0
+      ? Math.round(Math.min(...homeZones.map(z => _haversine(item.lat, item.lng, z.lat, z.lng))))
+      : null;
+
+    if (name) {
+      update.run(name, countryCode, country, distKm, item.tripId);
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('trips:name-update',
+          { tripId: item.tripId, name, countryCode, country, distKm });
+      }
+    }
+  }
+}
+
+ipcMain.handle('trips:get-trips', (_event, { offset = 0, limit = 200, orderBy = 'start_ts ASC' } = {}) => {
+  const SAFE = [
+    'start_ts ASC', 'start_ts DESC',
+    'name ASC, start_ts ASC',
+    'photo_count DESC, start_ts ASC',
+    'distance_km DESC, start_ts ASC',
+  ];
+  const order = SAFE.includes(orderBy) ? orderBy : 'start_ts ASC';
+  const trips = db.prepare(`SELECT * FROM trips ORDER BY ${order} LIMIT ? OFFSET ?`)
+    .all(limit, offset);
+  const { n: total } = db.prepare(`SELECT COUNT(*) AS n FROM trips`).get();
+  return { trips, total };
+});
+
+ipcMain.handle('trips:get-trip-detail', (_event, { tripId, pointLimit = 500 }) => {
+  const trip = db.prepare(`SELECT * FROM trips WHERE id = ?`).get(tripId);
+  if (!trip) return null;
+  const { n: ptCount } = db.prepare(
+    `SELECT COUNT(*) AS n FROM locations WHERE ts >= ? AND ts <= ? AND type = 'point' AND lat IS NOT NULL`
+  ).get(trip.start_ts, trip.end_ts);
+  const step = Math.max(1, Math.floor(ptCount / pointLimit));
+  const stepClause = step > 1 ? `AND (id % ${step} = 0)` : '';
+  const points = db.prepare(`
+    SELECT lat, lng, ts FROM locations
+    WHERE ts >= ? AND ts <= ? AND type = 'point' AND lat IS NOT NULL ${stepClause}
+    ORDER BY ts ASC
+  `).all(trip.start_ts, trip.end_ts);
+  const photos = db.prepare(`
+    SELECT filename, lat, lng, date_ts, file_path, thumbnail_path FROM photos
+    WHERE trip_id = ? AND lat IS NOT NULL ORDER BY date_ts ASC
+  `).all(tripId);
+  return { trip, points, photos };
+});
+
+ipcMain.handle('trips:get-trip-thumbs', (_event, { tripId }) => {
+  return db.prepare(`
+    SELECT filename, thumbnail_path, file_path, date_ts
+    FROM photos WHERE trip_id = ? ORDER BY date_ts ASC NULLS LAST LIMIT 8
+  `).all(tripId);
+});
+
+ipcMain.handle('trips:reset', () => {
+  db.exec('DELETE FROM trips');
+  db.prepare('UPDATE photos SET trip_id = NULL').run();
+  return { ok: true };
+});
+
+// ── Working folder settings ───────────────────────────────────────────────────
+
+ipcMain.handle('settings:get-working-folder', () => {
+  const wf = getWorkingFolder();
+  const dbPath = getDbPath();
+  const thumbDir = path.join(wf || app.getPath('userData'), 'fossick-thumbs');
+  // Report free space on the working folder's volume
+  let freeBytes = null;
+  try {
+    const { execFileSync } = require('child_process');
+    const df = execFileSync('df', ['-k', wf || app.getPath('userData')], { encoding: 'utf8' });
+    const line = df.split('\n')[1];
+    if (line) {
+      const parts = line.trim().split(/\s+/);
+      freeBytes = parseInt(parts[3], 10) * 1024; // df -k gives 1K blocks
+    }
+  } catch {}
+  return { workingFolder: wf, dbPath, thumbDir, freeBytes };
+});
+
+ipcMain.handle('settings:browse-working-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:       'Choose Working Folder',
+    message:     'Fossick will store its database, thumbnails, and extracted archives here.',
+    buttonLabel: 'Use This Folder',
+    properties:  ['openDirectory', 'createDirectory'],
+  });
+  if (result.canceled || !result.filePaths.length) return { canceled: true };
+  return { canceled: false, folderPath: result.filePaths[0] };
+});
+
+ipcMain.handle('settings:set-working-folder', async (_event, { folderPath }) => {
+  if (!folderPath) {
+    // Clear — revert to default userData location
+    const prefs = readPrefs();
+    delete prefs.workingFolder;
+    writePrefs(prefs);
+    return { ok: true, folderPath: null };
+  }
+
+  // Validate: must be writable
+  try {
+    const testFile = path.join(folderPath, '.fossick-write-test');
+    fs.writeFileSync(testFile, '1');
+    fs.unlinkSync(testFile);
+  } catch (e) {
+    return { ok: false, error: `Cannot write to that folder: ${e.message}` };
+  }
+
+  // If there's an existing DB in userData, offer to migrate it
+  const oldDbPath = path.join(app.getPath('userData'), 'fissick.db');
+  const newDbPath = path.join(folderPath, 'fissick.db');
+  let migrated = false;
+
+  if (fs.existsSync(oldDbPath) && !fs.existsSync(newDbPath)) {
+    try {
+      fs.copyFileSync(oldDbPath, newDbPath);
+      migrated = true;
+    } catch (e) {
+      return { ok: false, error: `Could not copy database: ${e.message}` };
+    }
+  }
+
+  // Save the new preference
+  const prefs = readPrefs();
+  prefs.workingFolder = folderPath;
+  writePrefs(prefs);
+
+  // Reopen the database at the new location
+  try {
+    if (db) db.close();
+  } catch {}
+  initDb();
+
+  return { ok: true, folderPath, migrated };
+});
+
 ipcMain.handle('licence:get-status', () => {
   const row = db.prepare("SELECT value FROM settings WHERE key = 'licence_key'").get();
   const key = row?.value || null;
@@ -1243,3 +1690,4 @@ ipcMain.handle('licence:deactivate', () => {
   db.prepare("DELETE FROM settings WHERE key = 'licence_key'").run();
   return { ok: true };
 });
+// test change Wed May 20 14:33:22 CEST 2026
