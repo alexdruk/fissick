@@ -23,6 +23,23 @@ const { execFile }   = require('child_process');
 const { promisify }  = require('util');
 const execFileAsync  = promisify(execFile);
 
+// Electron strips PATH — resolve ffmpeg explicitly from known install locations.
+// Falls back to bare 'ffmpeg' so system PATH is still tried last.
+function _findFfmpeg() {
+  const candidates = [
+    '/opt/homebrew/bin/ffmpeg',   // Apple Silicon Homebrew
+    '/usr/local/bin/ffmpeg',      // Intel Homebrew / manual install
+    '/usr/bin/ffmpeg',            // Linux system
+    'ffmpeg',                     // PATH fallback
+  ];
+  for (const p of candidates) {
+    if (p === 'ffmpeg') return p; // always include fallback
+    try { if (require('fs').existsSync(p)) return p; } catch {}
+  }
+  return 'ffmpeg';
+}
+const FFMPEG_BIN = _findFfmpeg();
+
 const { extractZips }       = require('./zipExtractor');
 const { detectSchemas }     = require('./schemaDetector');
 const {
@@ -321,7 +338,7 @@ async function run() {
           } catch {}
         } else if (FFMPEG_EXTS.includes(ext)) {
           try {
-            await execFileAsync('ffmpeg', [
+            await execFileAsync(FFMPEG_BIN, [
               '-i', mediaPath,
               '-frames:v', '1',
               '-vf', 'scale=280:280:force_original_aspect_ratio=decrease',
