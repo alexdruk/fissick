@@ -45,9 +45,29 @@ function status(phase, message) {
 }
 
 // Concurrency: half the CPUs, capped at 8, minimum 2
-// Outer pool depth: 2× CPU count keeps all ExifTool processes fed with work.
-// ExifTool is I/O-bound so this causes no meaningful CPU pressure.
-const CONCURRENCY = Math.max(8, os.cpus().length * 2);
+// Detect likely storage type from the work directory path.
+// HDDs have limited random IOPS — high concurrency causes head thrashing.
+// SSDs are I/O-bound and benefit from higher concurrency.
+function detectOptimalConcurrency(workPath) {
+  // On macOS, rotational status isn't directly queryable from Node.
+  // Heuristic: external volumes and paths with /Volumes/ are often HDDs.
+  // Internal SSD paths (/, /Users, /System) get full concurrency.
+  // This is imperfect but conservative — HDD gets 3, SSD gets full cores.
+  const cpus = os.cpus().length;
+  if (workPath && (
+    workPath.startsWith('/Volumes/') ||
+    workPath.includes('/old/') ||
+    workPath.includes('/backup/')
+  )) {
+    console.log('[fossick] Detected likely HDD path — using reduced concurrency (3) to avoid seek thrashing');
+    return 3;
+  }
+  const full = Math.max(8, cpus);
+  console.log(`[fossick] Using ${full} concurrent ExifTool processes`);
+  return full;
+}
+
+const CONCURRENCY = detectOptimalConcurrency(workerData.extractedFolder || workerData.zipPaths?.[0]);
 
 // ── Concurrency pool ──────────────────────────────────────────────────────────
 // Processes items from an array with a fixed number of concurrent workers.
