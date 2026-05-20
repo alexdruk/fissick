@@ -1704,3 +1704,4 @@ ipcMain.handle('licence:deactivate', () => {
   db.prepare("DELETE FROM settings WHERE key = 'licence_key'").run();
   return { ok: true };
 });
+// test change Wed May 20 15:53:22 CEST 2026
