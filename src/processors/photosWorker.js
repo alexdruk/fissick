@@ -40,6 +40,7 @@ function send(type, payload = {}) {
   parentPort.postMessage({ type, ...payload });
 }
 function status(phase, message) {
+  console.log(`[fossick] ${phase}: ${message}`);
   send('status', { phase, message });
 }
 
@@ -199,13 +200,12 @@ async function run() {
 
     status('processing', `Processing ${uniqueMedia.length.toLocaleString()} photos with ${CONCURRENCY} concurrent ExifTool processes…`);
 
-    // ── Phase 4: Concurrency-pool processing ────────────────────────────────
+    // ── Phase 4a: EXIF writing pass (no thumbnails — keep pool fast) ─────────
     let processed = 0, fixed = 0, matched = 0, failed = 0;
-  let writesIssued = 0; // incremented synchronously before await — prevents race condition
-  let trialLimitMessageSent = false;
-  const startMs = Date.now();
+    let writesIssued = 0;
+    let trialLimitMessageSent = false;
+    const startMs = Date.now();
 
-    // Flush results to SQLite every N completions
     const FLUSH_EVERY = 50;
     let pendingRows = [];
 
@@ -220,18 +220,23 @@ async function run() {
       const rate      = processed / (elapsed / 1000);
       const remaining = uniqueMedia.length - processed;
       const etaSecs   = rate > 0 ? Math.round(remaining / rate) : null;
+      const percent   = Math.round((processed / uniqueMedia.length) * 100);
+      // Log to terminal every 10%
+      if (percent % 10 === 0) {
+        const eta = etaSecs ? ` — ETA ${Math.round(etaSecs / 60)}m` : '';
+        console.log(`[fossick] ${percent}% — ${processed.toLocaleString()} / ${uniqueMedia.length.toLocaleString()} photos${eta}`);
+      }
       send('progress', {
         processed, total: uniqueMedia.length,
         fixed, matched, failed,
-        percent: Math.round((processed / uniqueMedia.length) * 100),
+        percent,
         etaSecs,
       });
     }
 
     await withPool(uniqueMedia, CONCURRENCY, async (mediaPath) => {
-      // Check pause/abort before processing each file
       const shouldAbort = await checkControl();
-      if (shouldAbort) return; // skip this file — abort in progress
+      if (shouldAbort) return;
 
       const filename = path.basename(mediaPath);
       let dateTs = null, lat = null, lng = null;
@@ -265,10 +270,8 @@ async function run() {
           lng = geo.longitude;
         }
 
-        // Trial limit — use writesIssued (incremented synchronously before await)
-        // to prevent race condition where concurrent pool workers all see fixed < limit
         const underLimit = !isLimited || writesIssued < trialLimit;
-        if (underLimit) writesIssued++; // claim the slot before awaiting
+        if (underLimit) writesIssued++;
 
         if (underLimit) {
           const result = await writeExifFromSidecar(mediaPath, sidecarData, CONCURRENCY);
@@ -302,45 +305,11 @@ async function run() {
 
       const row = buildRow(mediaPath, filename, dateTs, lat, lng, exifWritten, sidecarFound, dateSource, exifError);
 
-      // ── Thumbnail generation ────────────────────────────────────────────
-      // sharp handles standard formats; ffmpeg handles HEIC/HEIF and video.
-      if (thumbDir) {
-        const ext = filename.split('.').pop()?.toLowerCase() || '';
-        const SHARP_EXTS  = ['jpg','jpeg','png','gif','webp','bmp','tiff','tif','avif'];
-        const FFMPEG_EXTS = ['heic','heif','mov','mp4','m4v','avi','mkv','3gp'];
-        const safeBase  = mediaPath.replace(/[/\\:]/g, '_').slice(-120);
-        const thumbPath = path.join(thumbDir, safeBase + '_t.jpg');
-
-        if (sharp && SHARP_EXTS.includes(ext)) {
-          try {
-            await sharp(mediaPath)
-              .resize(280, 280, { fit: 'inside', withoutEnlargement: true })
-              .rotate()
-              .jpeg({ quality: 72 })
-              .toFile(thumbPath);
-            row.thumbnailPath = thumbPath;
-          } catch {}
-        } else if (FFMPEG_EXTS.includes(ext)) {
-          try {
-            await execFileAsync(FFMPEG_BIN, [
-              '-i', mediaPath,
-              '-frames:v', '1',
-              '-vf', 'scale=280:280:force_original_aspect_ratio=decrease',
-              '-update', '1',
-              '-y', thumbPath,
-            ], { timeout: 20000 });
-            if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
-              row.thumbnailPath = thumbPath;
-            }
-          } catch {}
-        }
-      }
       processed++;
       if (row.sidecarFound) matched++;
       if (row.exifWritten)  fixed++;
       if (!row.sidecarFound && row.dateSource === 'none') failed++;
 
-      // Notify renderer exactly once when trial limit is hit
       if (isLimited && !trialLimitMessageSent && writesIssued >= trialLimit && !row.exifWritten && exifError === 'trial_limit') {
         trialLimitMessageSent = true;
         send('status', { phase: 'processing', message: `Trial limit reached: ${trialLimit} photos fixed. Remaining photos indexed but not written.` });
@@ -349,19 +318,84 @@ async function run() {
 
       pendingRows.push(row);
       if (pendingRows.length >= FLUSH_EVERY) flushPending();
-
-      if (processed % FLUSH_EVERY === 0 || processed === uniqueMedia.length) {
-        reportProgress();
-      }
+      if (processed % FLUSH_EVERY === 0 || processed === uniqueMedia.length) reportProgress();
     });
 
     flushPending();
-
-    // ── Phase 5: Done ───────────────────────────────────────────────────────
     await shutdownExifTool();
 
-    status('done', `Done — fixed ${fixed.toLocaleString()} of ${uniqueMedia.length.toLocaleString()} photos.`);
+    // ── Phase 4b: Thumbnail generation (separate pass — doesn't block EXIF) ─
+    // HEIC/video via ffmpeg can take 1-2s each; running separately means EXIF
+    // completes at full speed and thumbnails run as a background phase.
+    if (thumbDir) {
+      const SHARP_EXTS  = new Set(['jpg','jpeg','png','gif','webp','bmp','tiff','tif','avif']);
+      const FFMPEG_EXTS = new Set(['heic','heif','mov','mp4','m4v','avi','mkv','3gp']);
 
+      // Load current rows from DB to get IDs (needed for UPDATE)
+      const allRows = db.prepare(`SELECT id, file_path, filename FROM photos WHERE thumbnail_path IS NULL`).all();
+      const updateThumb = db.prepare(`UPDATE photos SET thumbnail_path = ? WHERE id = ?`);
+
+      let thumbDone = 0;
+      const thumbTotal = allRows.length;
+
+      send('status', { phase: 'thumbnails',
+        message: `Generating thumbnails for ${thumbTotal.toLocaleString()} photos…` });
+
+      // Use same concurrency for thumbnails
+      await withPool(allRows, CONCURRENCY, async (photo) => {
+        const shouldAbort = await checkControl();
+        if (shouldAbort) return;
+
+        const ext       = photo.filename.split('.').pop()?.toLowerCase() || '';
+        const safeBase  = photo.file_path.replace(/[/\\:]/g, '_').slice(-120);
+        const thumbPath = path.join(thumbDir, safeBase + '_t.jpg');
+
+        // Skip if thumbnail already exists from a previous run
+        if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
+          updateThumb.run(thumbPath, photo.id);
+          thumbDone++;
+          return;
+        }
+
+        if (sharp && SHARP_EXTS.has(ext)) {
+          try {
+            await sharp(photo.file_path)
+              .resize(280, 280, { fit: 'inside', withoutEnlargement: true })
+              .rotate()
+              .jpeg({ quality: 72 })
+              .toFile(thumbPath);
+            updateThumb.run(thumbPath, photo.id);
+          } catch {}
+        } else if (FFMPEG_EXTS.has(ext)) {
+          try {
+            await execFileAsync(FFMPEG_BIN, [
+              '-i', photo.file_path,
+              '-frames:v', '1',
+              '-vf', 'scale=280:280:force_original_aspect_ratio=decrease',
+              '-update', '1',
+              '-y', thumbPath,
+            ], { timeout: 20000 });
+            if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
+              updateThumb.run(thumbPath, photo.id);
+            }
+          } catch {}
+        }
+
+        thumbDone++;
+        if (thumbDone % 100 === 0 || thumbDone === thumbTotal) {
+          send('progress', {
+            processed: thumbDone, total: thumbTotal,
+            fixed, matched, failed,
+            percent: Math.round((thumbDone / thumbTotal) * 100),
+            etaSecs: null,
+            phase: 'thumbnails',
+          });
+        }
+      });
+    }
+
+    // ── Phase 5: Done ────────────────────────────────────────────────────────
+    status('done', `Done — fixed ${fixed.toLocaleString()} of ${uniqueMedia.length.toLocaleString()} photos.`);
     send('summary', { processed, fixed, matched, failed });
 
   } catch (err) {

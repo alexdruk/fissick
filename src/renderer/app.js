@@ -251,7 +251,8 @@ function handleProcessEvent(msg) {
       set('stat-failed',    msg.failed.toLocaleString());
       const bar = document.getElementById('progress-bar');
       if (bar) bar.style.width = msg.percent + '%';
-      set('progress-text', `${msg.processed.toLocaleString()} / ${msg.total.toLocaleString()}`);
+      const label = msg.phase === 'thumbnails' ? 'thumbnails' : 'photos';
+      set('progress-text', `${msg.processed.toLocaleString()} / ${msg.total.toLocaleString()} ${label}`);
       if (msg.etaSecs > 0) set('progress-eta', 'ETA: ' + formatEta(msg.etaSecs));
       break;
     }
