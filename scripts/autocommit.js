@@ -41,6 +41,17 @@ function commitPendingChanges() {
     log(`git commit failed: ${commitResult.stderr || commitResult.stdout}`);
   } else {
     log(`Committed changes: ${message}`);
+    // Optional push to remote when AUTO_PUSH env var is set
+    const autoPush = (process.env.AUTO_PUSH || process.env.AUTOPUSH || '').toLowerCase();
+    if (autoPush === '1' || autoPush === 'true' || autoPush === 'yes') {
+      log('AUTO_PUSH enabled — pushing to remote...');
+      const pushResult = runGitCommand(['push']);
+      if (pushResult.status !== 0) {
+        log(`git push failed: ${pushResult.stderr || pushResult.stdout}`);
+      } else {
+        log(`Pushed to remote: ${pushResult.stdout || 'success'}`);
+      }
+    }
   }
 }
 
