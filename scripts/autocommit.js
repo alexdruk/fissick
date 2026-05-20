@@ -20,6 +20,53 @@ function runGitCommand(args) {
   };
 }
 
+function buildCommitMessage(diffOutput) {
+  const lines = diffOutput
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const changes = lines.map((line) => {
+    const parts = line.split('\t');
+    const status = parts[0];
+    if (status.startsWith('R')) {
+      return {
+        verb: 'rename',
+        path: `${parts[1]} -> ${parts[2]}`,
+      };
+    }
+
+    const path = parts[1] || parts[0];
+    switch (status) {
+      case 'A':
+        return { verb: 'add', path };
+      case 'M':
+        return { verb: 'update', path };
+      case 'D':
+        return { verb: 'delete', path };
+      case 'C':
+        return { verb: 'copy', path };
+      default:
+        return { verb: 'modify', path };
+    }
+  });
+
+  if (!changes.length) {
+    return `Auto-commit: ${new Date().toISOString()}`;
+  }
+
+  const summary = changes.map((c) => `${c.verb} ${c.path}`);
+  if (summary.length === 1) {
+    return `Auto-commit: ${summary[0]}`;
+  }
+
+  if (summary.length <= 3) {
+    return `Auto-commit: ${summary.join(', ')}`;
+  }
+
+  return `Auto-commit: ${summary[0]}, ${summary[1]}, +${summary.length - 2} more`;
+}
+
 function commitPendingChanges() {
   log(`Processing change event: ${lastEvent}`);
 
@@ -35,7 +82,8 @@ function commitPendingChanges() {
     return;
   }
 
-  const message = `Auto-commit: ${new Date().toISOString()}`;
+  const nameStatus = runGitCommand(['diff', '--cached', '--name-status', '-M']);
+  const message = buildCommitMessage(nameStatus.stdout);
   const commitResult = runGitCommand(['commit', '-m', message]);
   if (commitResult.status !== 0) {
     log(`git commit failed: ${commitResult.stderr || commitResult.stdout}`);
