@@ -18,27 +18,11 @@ const Database = require('better-sqlite3');
 let sharp = null;
 try { sharp = require('sharp'); } catch {}
 
-// ffmpeg for HEIC/video thumbnails — same approach as the main-process Generate Thumbnails button
+// ffmpeg for HEIC/video thumbnails — bundled via ffmpeg-static, no system install needed
 const { execFile }   = require('child_process');
 const { promisify }  = require('util');
 const execFileAsync  = promisify(execFile);
-
-// Electron strips PATH — resolve ffmpeg explicitly from known install locations.
-// Falls back to bare 'ffmpeg' so system PATH is still tried last.
-function _findFfmpeg() {
-  const candidates = [
-    '/opt/homebrew/bin/ffmpeg',   // Apple Silicon Homebrew
-    '/usr/local/bin/ffmpeg',      // Intel Homebrew / manual install
-    '/usr/bin/ffmpeg',            // Linux system
-    'ffmpeg',                     // PATH fallback
-  ];
-  for (const p of candidates) {
-    if (p === 'ffmpeg') return p; // always include fallback
-    try { if (require('fs').existsSync(p)) return p; } catch {}
-  }
-  return 'ffmpeg';
-}
-const FFMPEG_BIN = _findFfmpeg();
+const FFMPEG_BIN     = require('ffmpeg-static');
 
 const { extractZips }       = require('./zipExtractor');
 const { detectSchemas }     = require('./schemaDetector');
