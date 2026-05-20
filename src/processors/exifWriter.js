@@ -10,9 +10,15 @@
 
 const { ExifTool } = require('exiftool-vendored');
 
+const os = require('os');
+
 let _exiftool = null;
 
-function getExifTool(maxProcs = 4) {
+// ExifTool is I/O-bound, not CPU-bound — use all available cores.
+// More processes = more files written in parallel with no meaningful CPU cost.
+const DEFAULT_MAX_PROCS = Math.max(4, os.cpus().length);
+
+function getExifTool(maxProcs = DEFAULT_MAX_PROCS) {
   if (!_exiftool) {
     _exiftool = new ExifTool({ taskTimeoutMillis: 15000, maxProcs });
   }

@@ -43,7 +43,9 @@ function status(phase, message) {
 }
 
 // Concurrency: half the CPUs, capped at 8, minimum 2
-const CONCURRENCY = Math.min(8, Math.max(2, Math.floor(os.cpus().length / 2)));
+// Outer pool depth: 2× CPU count keeps all ExifTool processes fed with work.
+// ExifTool is I/O-bound so this causes no meaningful CPU pressure.
+const CONCURRENCY = Math.max(8, os.cpus().length * 2);
 
 // ── Concurrency pool ──────────────────────────────────────────────────────────
 // Processes items from an array with a fixed number of concurrent workers.
