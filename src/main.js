@@ -1416,16 +1416,13 @@ ipcMain.handle('trips:get-clusters', () => {
 
   merged.sort((a, b) => b.cnt - a.cnt);
 
-  // No hard cap on candidates, but return top 10 by default with a hasMore flag.
-  // The renderer shows a "Show all N" link when hasMore is true.
+  // Return ALL clusters — the renderer groups by country and shows top-10 per country.
+  // No hard cap here; grouping/limiting happens in the modal UI.
   const allClusters = merged
     .filter(c => c.cnt >= 10)
     .map((c, i) => ({ index: i, lat: c.clat, lng: c.clng, count: c.cnt, name: null }));
 
-  const limit   = 10;
-  const hasMore = allClusters.length > limit;
-
-  return { clusters: allClusters.slice(0, limit), hasMore, total: allClusters.length };
+  return { clusters: allClusters, hasMore: false, total: allClusters.length };
 });
 
 // Return ALL clusters (called when user clicks "Show all N locations")

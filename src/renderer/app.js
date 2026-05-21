@@ -1687,27 +1687,6 @@ const Trips = (() => {
       }
     }
 
-    // "Show all N locations" link
-    if (hasMore && totalClusters > clusters.length) {
-      const showMore = document.createElement('div');
-      showMore.style.cssText = 'padding:8px 14px;cursor:pointer;font-family:var(--mono);font-size:10px;color:var(--acc);text-align:center;border-top:1px solid var(--border)';
-      showMore.textContent = `Show all ${totalClusters} locations`;
-      showMore.addEventListener('click', async () => {
-        showMore.textContent = 'Loading…';
-        const { clusters: all } = await window.tt.getAllClusters();
-        // Merge new clusters beyond the first 10
-        const newClusters = all.slice(_hzClusters.length);
-        _hzClusters.push(...newClusters);
-        _renderHzClusters(all, false, all.length);
-        // Restart geocoding for the new items
-        _geocodeExpected += newClusters.length;
-        window.tt.geocodeBatch({ points: newClusters.map(c => ({ index: c.index, lat: c.lat, lng: c.lng })) })
-          .catch(() => {})
-          .finally(() => { clearTimeout(_groupRenderTimer); _renderGroupedList(); });
-      });
-      hzList.appendChild(showMore);
-    }
-
     if (_hzMap && bounds.length > 0) {
       try { _hzMap.fitBounds(L.latLngBounds(bounds), { padding: [32, 32], maxZoom: 8 }); } catch {}
       setTimeout(() => {
@@ -1730,16 +1709,25 @@ const Trips = (() => {
       groups[key].push(c);
     }
 
+    // Sort countries by total photo count; within each country top-10 by count
     const sorted = Object.entries(groups)
-      .map(([country, list]) => ({ country, list, total: list.reduce((s, c) => s + c.count, 0) }))
+      .map(([country, list]) => ({
+        country,
+        list: list.slice(0, 10), // top-10 per country
+        total: list.reduce((s, c) => s + c.count, 0),
+      }))
       .sort((a, b) => b.total - a.total);
 
     const scrollTop = hzList.scrollTop;
     hzList.innerHTML = '<div class="hz-list-hint">Select home zones</div>';
 
     for (const { country, list, total } of sorted) {
-      const collapsed = _collapsedCountries.has(country);
+      // Default: collapse countries that have no checked items
       const checked   = list.filter(c => _hzChecked.has(c.index)).length;
+      const collapsed  = !_collapsedCountries.has(country) && checked === 0
+        ? true   // auto-collapse unchecked countries
+        : _collapsedCountries.has(country);
+
       const metaParts = [`${list.length} location${list.length !== 1 ? 's' : ''}`,
                          `${total.toLocaleString()} photos`];
       if (checked) metaParts.push(`${checked} selected ✓`);

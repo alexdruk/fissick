@@ -54,19 +54,19 @@ const TripDetailMap = (() => {
       L.polyline(lls, { color: '#1e4d7a', weight: 2.5, opacity: 0.6 }).addTo(_map);
     }
 
-    // ── Numbered photo pins ──────────────────────────────────────────────────
+    // ── Photo location pins ──────────────────────────────────────────────────
     const withGps = (photos || []).filter(p => p.lat != null && p.lng != null);
-    withGps.forEach((ph, i) => {
+    withGps.forEach((ph) => {
       bounds.push([ph.lat, ph.lng]);
 
-      const icon = L.divIcon({
-        html:      `<div class="tdm-pin">${i + 1}</div>`,
-        className: '',
-        iconSize:  [26, 26],
-        iconAnchor:[13, 13],
+      const marker = L.circleMarker([ph.lat, ph.lng], {
+        radius:      7,
+        fillColor:   '#b85c2c',
+        color:       '#8a3a10',
+        weight:      1.5,
+        opacity:     1,
+        fillOpacity: 0.9,
       });
-
-      const marker = L.marker([ph.lat, ph.lng], { icon, zIndexOffset: 100 });
 
       // Hover tooltip — filename
       marker.bindTooltip(
@@ -86,7 +86,7 @@ const TripDetailMap = (() => {
         `<div class="tdm-popup-name">${_esc(ph.filename)}</div>` +
         (dateStr ? `<div class="tdm-popup-date">${dateStr}</div>` : '') +
         `</div>`,
-        { maxWidth: 230, className: 'tdm-popup-wrap' }
+        { maxWidth: 250, className: 'tdm-popup-wrap' }
       );
 
       // Click on popup image → open lightbox
