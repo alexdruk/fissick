@@ -631,8 +631,16 @@ document.querySelectorAll('.filter-tab').forEach(tab => {
       if (extSel2) extSel2.value = '';
       const fmSel = document.getElementById('dr-from-month');
       const tmSel = document.getElementById('dr-to-month');
+      const fyEl  = document.getElementById('dr-from-year');
+      const tyEl  = document.getElementById('dr-to-year');
+      const fdEl  = document.getElementById('dr-from-day');
+      const tdEl  = document.getElementById('dr-to-day');
       if (fmSel) fmSel.value = '';
       if (tmSel) tmSel.value = '';
+      if (fyEl)  fyEl.value  = '';
+      if (tyEl)  tyEl.value  = '';
+      if (fdEl)  fdEl.value  = '';
+      if (tdEl)  tdEl.value  = '';
       document.getElementById('dr-clear').style.display = 'none';
 
       // If a specific filter tab (not ALL), bulk-select all paths for that filter
@@ -1716,9 +1724,18 @@ const Trips = (() => {
     const hzList = document.getElementById('hz-list');
     if (!hzList || !_hzClusters.length) return;
 
+    // If no country data yet, show loading message and wait for geocoding
+    const geocodedCount = _hzClusters.filter(c => c.country).length;
+    if (geocodedCount === 0) {
+      hzList.innerHTML = '<div class="hz-list-hint">Geocoding locations…</div>';
+      return;
+    }
+
     const groups = {};
     for (const c of _hzClusters) {
-      const key = c.country || '—';
+      // Skip clusters with no country yet — they'll appear after geocoding
+      if (!c.country) continue;
+      const key = c.country;
       if (!groups[key]) groups[key] = [];
       groups[key].push(c);
     }
@@ -1727,20 +1744,23 @@ const Trips = (() => {
     const sorted = Object.entries(groups)
       .map(([country, list]) => ({
         country,
-        list: list.slice(0, 10), // top-10 per country
+        list: list.sort((a,b) => b.count - a.count).slice(0, 10),
         total: list.reduce((s, c) => s + c.count, 0),
       }))
       .sort((a, b) => b.total - a.total);
 
     const scrollTop = hzList.scrollTop;
-    hzList.innerHTML = '<div class="hz-list-hint">Select home zones</div>';
+    hzList.innerHTML = geocodedCount < _hzClusters.length
+      ? `<div class="hz-list-hint">Geocoding… ${geocodedCount}/${_hzClusters.length}</div>`
+      : '<div class="hz-list-hint">Select home zones</div>';
 
     for (const { country, list, total } of sorted) {
-      // Default: collapse countries that have no checked items
       const checked   = list.filter(c => _hzChecked.has(c.index)).length;
-      const collapsed  = !_collapsedCountries.has(country) && checked === 0
-        ? true   // auto-collapse unchecked countries
-        : _collapsedCountries.has(country);
+      // Auto-expand France/most-photographed country, collapse others unless checked
+      const isTop     = sorted[0]?.country === country;
+      const collapsed  = _collapsedCountries.has(country)
+        ? true
+        : (!_collapsedCountries.has('__expanded__' + country) && !isTop && checked === 0);
 
       const metaParts = [`${list.length} location${list.length !== 1 ? 's' : ''}`,
                          `${total.toLocaleString()} photos`];
@@ -1770,7 +1790,7 @@ const Trips = (() => {
         item.innerHTML = `
           <div class="hz-num">${c.index + 1}</div>
           <div class="hz-item-info">
-            <div class="hz-item-name${c.name ? '' : ' loading'}">${_esc(cityName)}</div>
+            <div class="hz-item-name">${_esc(cityName)}</div>
             <div class="hz-item-count">${c.count.toLocaleString()} photos</div>
           </div>`;
         item.addEventListener('click', () => _toggleHz(c.index));
