@@ -488,6 +488,11 @@ function renderPhotoRow(photo) {
     thumbWrap.innerHTML = `<img class="photo-thumb" src="local://${thumbSrc}" loading="lazy" alt=""
         onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
       <div class="photo-thumb-placeholder" style="display:none">🖼️</div>`;
+  } else if (isVideo && photo.thumbnail_path) {
+    // Video with generated thumbnail — show it like an image
+    thumbWrap.innerHTML = `<img class="photo-thumb" src="local://${thumbSrc}" loading="lazy" alt=""
+        onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div class="photo-thumb-placeholder photo-thumb-video" style="display:none">🎬<span class="thumb-video-label">${ext.toUpperCase()}</span></div>`;
   } else if (isVideo) {
     thumbWrap.innerHTML = `<div class="photo-thumb-placeholder photo-thumb-video">🎬<span class="thumb-video-label">${ext.toUpperCase()}</span></div>`;
   } else {
