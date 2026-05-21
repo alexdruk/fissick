@@ -560,7 +560,16 @@ function renderPhotoRow(photo) {
 }
 
 document.getElementById('btn-back-results').addEventListener('click', async () => {
+  // Confirm before wiping — processed data takes significant time to regenerate
+  const confirmed = await window.tt.showConfirmDialog({
+    title:   'Start over?',
+    message: 'This will clear all processed photos and trips. You will need to re-process your archive.\n\nAre you sure?',
+    buttons: ['Cancel', 'Clear & Start Over'],
+  });
+  if (!confirmed) return;
+
   await window.tt.resetData();
+  await window.tt.resetTrips();
   state.source = {};
   state.dateFrom = null;
   state.dateTo   = null;

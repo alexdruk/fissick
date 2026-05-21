@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld('tt', {
   activateLicence:   (opts) => ipcRenderer.invoke('licence:activate', opts),
   deactivateLicence: ()     => ipcRenderer.invoke('licence:deactivate'),
 
+  showConfirmDialog: (opts) => ipcRenderer.invoke('util:show-confirm-dialog', opts),
+
   // ── Working folder ─────────────────────────────────────────────────────────
   getWorkingFolder:    ()      => ipcRenderer.invoke('settings:get-working-folder'),
   setWorkingFolder:    (opts)  => ipcRenderer.invoke('settings:set-working-folder', opts),

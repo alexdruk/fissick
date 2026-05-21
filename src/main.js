@@ -1658,7 +1658,17 @@ ipcMain.handle('trips:reset', () => {
   return { ok: true };
 });
 
-// ── Working folder settings ───────────────────────────────────────────────────
+ipcMain.handle('util:show-confirm-dialog', async (_event, { title, message, buttons }) => {
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type:    'warning',
+    title,
+    message,
+    buttons: buttons || ['Cancel', 'OK'],
+    defaultId: 0,
+    cancelId:  0,
+  });
+  return response === 1; // true = confirmed (second button)
+});
 
 ipcMain.handle('settings:get-working-folder', () => {
   const wf = getWorkingFolder();
