@@ -1397,11 +1397,14 @@ html, body {
             <div class="trips-sort-wrap">
               <label class="trips-sort-label" for="trips-sort-select">Sort</label>
               <select id="trips-sort-select" class="trips-sort-select">
-                <option value="chrono">Chronological ↑</option>
-                <option value="chrono-desc">Chronological ↓</option>
-                <option value="country">By name</option>
-                <option value="photos">Most photos first</option>
-                <option value="distance">Furthest first</option>
+                <option value="chrono">Date — oldest first</option>
+                <option value="chrono-desc">Date — newest first</option>
+                <option value="country">Name — A to Z</option>
+                <option value="country-desc">Name — Z to A</option>
+                <option value="photos">Photos — most first</option>
+                <option value="photos-asc">Photos — fewest first</option>
+                <option value="distance">Distance — furthest first</option>
+                <option value="distance-asc">Distance — nearest first</option>
               </select>
             </div>
             <button class="trips-recompute-btn" id="btn-recompute-trips">↺ Recompute</button>
@@ -1497,7 +1500,7 @@ html, body {
   <div class="hz-modal-box">
     <div class="hz-modal-header">
       <h2>Where is home?</h2>
-      <p>Type each place you have lived — city, neighbourhood, or address. Add all homes past and present. Fossick will find each one and add it as a home zone. Distance shown on trips is always measured from the <strong>nearest</strong> home zone.</p>
+      <p>Type each place you have lived — city, neighbourhood, or address. Add all homes past and present. Fossick will find each one and add it as a home zone. Trips are journeys more than 50 km from all home zones.</p>
     </div>
     <div class="hz-modal-body">
 

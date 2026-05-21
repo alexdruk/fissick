@@ -1442,11 +1442,14 @@ const Trips = (() => {
     _setTripsPanelState('list');
     TripMaps.destroyAll();
     const ORDER = {
-      'chrono':      'start_ts ASC',
-      'chrono-desc': 'start_ts DESC',
-      'country':     'name ASC, start_ts ASC',
-      'photos':      'photo_count DESC, start_ts ASC',
-      'distance':    'distance_km DESC, start_ts ASC',
+      'chrono':        'start_ts ASC',
+      'chrono-desc':   'start_ts DESC',
+      'country':       'name ASC, start_ts ASC',
+      'country-desc':  'name DESC, start_ts ASC',
+      'photos':        'photo_count DESC, start_ts ASC',
+      'photos-asc':    'photo_count ASC, start_ts ASC',
+      'distance':      'distance_km DESC, start_ts ASC',
+      'distance-asc':  'distance_km ASC, start_ts ASC',
     };
     const { trips, total } = await window.tt.getTrips({
       limit: 200, orderBy: ORDER[_currentSort] || 'start_ts ASC',
@@ -1489,7 +1492,7 @@ const Trips = (() => {
         <div class="tc-meta">${_esc(dateStr)} · ${days} day${days !== 1 ? 's' : ''}</div>
         <div class="tc-stats">
           <span class="tc-stat">${(trip.photo_count || 0).toLocaleString()} photos</span>
-          ${distStr ? `<span class="tc-stat tc-stat-dist">${_esc(distStr)}</span>` : ''}
+          ${distStr ? `<span class="tc-stat tc-stat-dist" title="Distance from the nearest home zone">${_esc(distStr)}</span>` : ''}
         </div>
       </div>
       <div class="tc-arrow">›</div>`;

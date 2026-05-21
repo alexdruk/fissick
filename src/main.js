@@ -1616,9 +1616,9 @@ async function _geocodeTripNames(items) {
 ipcMain.handle('trips:get-trips', (_event, { offset = 0, limit = 200, orderBy = 'start_ts ASC' } = {}) => {
   const SAFE = [
     'start_ts ASC', 'start_ts DESC',
-    'name ASC, start_ts ASC',
-    'photo_count DESC, start_ts ASC',
-    'distance_km DESC, start_ts ASC',
+    'name ASC, start_ts ASC', 'name DESC, start_ts ASC',
+    'photo_count DESC, start_ts ASC', 'photo_count ASC, start_ts ASC',
+    'distance_km DESC, start_ts ASC', 'distance_km ASC, start_ts ASC',
   ];
   const order = SAFE.includes(orderBy) ? orderBy : 'start_ts ASC';
   const trips = db.prepare(`SELECT * FROM trips ORDER BY ${order} LIMIT ? OFFSET ?`)
