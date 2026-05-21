@@ -1096,8 +1096,7 @@ document.getElementById('ext-filter-select').addEventListener('change', async (e
   _updateSelectionUI();
 });
 
-// ── Generate Thumbnails — disabled: thumbnails now generated during processing ──
-/*
+// ── Generate Thumbnails — backfill missing thumbnails without reprocessing ──────
 document.getElementById('btn-generate-thumbs').addEventListener('click', async () => {
   const btn       = document.getElementById('btn-generate-thumbs');
   const wrap      = document.getElementById('thumb-progress-wrap');
@@ -1132,7 +1131,6 @@ document.getElementById('btn-generate-thumbs').addEventListener('click', async (
     btn.disabled = false;
   }
 });
-*/
 
 const HEIC_EXTS  = ['heic','heif'];
 const VIDEO_EXTS_LB = ['mov','mp4','m4v','avi','mkv','3gp'];
@@ -1307,7 +1305,7 @@ function _showTripsPanel(show) {
   const tripsPanel   = document.getElementById('trips-panel');
   const exportBar    = document.getElementById('export-bar');
   const dateRangeBar = document.getElementById('date-range-bar');
-  const thumbGenBar  = document.getElementById('thumb-gen-bar'); // may be null (disabled)
+  const thumbGenBar  = document.getElementById('thumb-gen-bar');
   const selBar       = document.getElementById('select-bar');
   if (!viewResults || !tripsPanel) return;
 

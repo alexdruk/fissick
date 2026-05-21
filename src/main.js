@@ -923,12 +923,25 @@ ipcMain.handle('util:heic-to-jpeg', async (_event, { filePath }) => {
 // ── Generate thumbnails (post-processing pass) ────────────────────────────────
 ipcMain.handle('util:generate-thumbnails', async () => {
   const thumbDir = ensureThumbDir();
+  fs.mkdirSync(thumbDir, { recursive: true });
   const { execFile } = require('child_process');
   const { promisify } = require('util');
   const execFileAsync = promisify(execFile);
 
   let sharp = null;
   try { sharp = require('sharp'); } catch {}
+
+  // Reset stale entries — thumbnail_path recorded but file missing on disk
+  const staleRows = db.prepare(
+    `SELECT id, thumbnail_path FROM photos WHERE thumbnail_path IS NOT NULL`
+  ).all();
+  const resetThumb = db.prepare(`UPDATE photos SET thumbnail_path = NULL WHERE id = ?`);
+  let resetCount = 0;
+  for (const row of staleRows) {
+    try { if (!fs.existsSync(row.thumbnail_path)) { resetThumb.run(row.id); resetCount++; } }
+    catch { resetThumb.run(row.id); resetCount++; }
+  }
+  if (resetCount > 0) console.log(`[fossick] thumbnails: reset ${resetCount} stale entries`);
 
   const photos = db.prepare(
     `SELECT id, file_path, filename FROM photos WHERE thumbnail_path IS NULL`
@@ -938,50 +951,83 @@ ipcMain.handle('util:generate-thumbnails', async () => {
   let done = 0, generated = 0, failed = 0;
   const update = db.prepare(`UPDATE photos SET thumbnail_path = ? WHERE id = ?`);
 
-  // ffmpeg handles HEIC, HEIF, MOV, MP4 and everything else
-  // sharp handles JPG, PNG, WebP (faster than ffmpeg for standard formats)
-  const FFMPEG_EXTS = ['heic','heif','mov','mp4','m4v','avi','mkv','3gp','avif'];
-  const SHARP_EXTS  = ['jpg','jpeg','png','gif','webp','bmp','tiff','tif'];
+  const SHARP_EXTS  = new Set(['jpg','jpeg','png','gif','webp','bmp','tiff','tif','avif']);
+  const SIPS_EXTS   = new Set(['heic','heif']);
+  const VIDEO_EXTS  = new Set(['mov','mp4','m4v','avi','mkv','3gp']);
 
   async function processOne(photo) {
-    const ext = (photo.filename.split('.').pop() || '').toLowerCase();
-    const safeBase  = photo.file_path.replace(/[/\\:]/g, '_').slice(-120);
+    const ext      = (photo.filename.split('.').pop() || '').toLowerCase();
+    const safeBase = photo.file_path.replace(/[/\\:]/g, '_').slice(-120);
     const thumbPath = path.join(thumbDir, safeBase + '_t.jpg');
 
-    try {
-      if (FFMPEG_EXTS.includes(ext)) {
-        await execFileAsync(FFMPEG_BIN, [
-          '-i', photo.file_path,
-          '-frames:v', '1',
-          '-vf', 'scale=280:280:force_original_aspect_ratio=decrease',
-          '-update', '1',
-          '-y', thumbPath,
-        ], { timeout: 20000 });
-        if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
-          update.run(thumbPath, photo.id);
-          generated++;
-        } else { failed++; }
-      } else if (SHARP_EXTS.includes(ext) && sharp) {
+    // Skip if already exists
+    if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
+      update.run(thumbPath, photo.id);
+      generated++;
+      console.log(`[thumb-skip] already exists: ${photo.filename}`);
+    } else if (SHARP_EXTS.has(ext) && sharp) {
+      try {
         await sharp(photo.file_path)
           .resize(280, 280, { fit: 'inside', withoutEnlargement: true })
-          .rotate()
-          .jpeg({ quality: 72 })
-          .toFile(thumbPath);
+          .rotate().jpeg({ quality: 72 }).toFile(thumbPath);
         update.run(thumbPath, photo.id);
         generated++;
-      }
-    } catch { failed++; }
+      } catch (err) { console.log(`[thumb-sharp] ${photo.filename}: ${err.message}`); failed++; }
+
+    } else if (SIPS_EXTS.has(ext) && process.platform === 'darwin') {
+      try {
+        await execFileAsync('sips', [
+          '-s', 'format', 'jpeg', '-z', '280', '280',
+          photo.file_path, '--out', thumbPath,
+        ], { timeout: 20000 });
+        if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
+          update.run(thumbPath, photo.id); generated++;
+        } else { console.log(`[thumb-sips] empty: ${photo.filename}`); failed++; }
+      } catch (err) { console.log(`[thumb-sips] ${photo.filename}: ${err.message}`); failed++; }
+
+    } else if (VIDEO_EXTS.has(ext) && process.platform === 'darwin') {
+      try {
+        await execFileAsync('qlmanage', [
+          '-t', '-s', '280', '-o', thumbDir, photo.file_path,
+        ], { timeout: 30000 });
+        const qlOut = path.join(thumbDir, path.basename(photo.file_path) + '.png');
+        console.log(`[thumb-ql] looking for: ${qlOut} exists=${fs.existsSync(qlOut)}`);
+        if (fs.existsSync(qlOut) && fs.statSync(qlOut).size > 100) {
+          fs.renameSync(qlOut, thumbPath);
+          update.run(thumbPath, photo.id); generated++;
+        } else {
+          // List thumbDir to see what qlmanage actually wrote
+          const actual = fs.readdirSync(thumbDir).filter(f => f.includes(path.basename(photo.file_path)));
+          console.log(`[thumb-ql] dir match: ${actual.join(', ') || 'nothing'}`);
+          failed++;
+        }
+      } catch (err) { console.log(`[thumb-ql] ${photo.filename}: ${err.message}`); failed++; }
+
+    } else {
+      // Non-macOS fallback: ffmpeg-static
+      console.log(`[thumb-ffmpeg] trying: ${photo.filename} ext=${ext}`);
+      try {
+        await execFileAsync(FFMPEG_BIN, [
+          '-i', photo.file_path, '-frames:v', '1',
+          '-vf', 'scale=280:280:force_original_aspect_ratio=decrease',
+          '-update', '1', '-y', thumbPath,
+        ], { timeout: 20000 });
+        if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
+          update.run(thumbPath, photo.id); generated++;
+        } else { failed++; }
+      } catch { failed++; }
+    }
 
     done++;
-    if (done % 50 === 0 || done === total) {
+    if (done % 100 === 0 || done === total) {
+      console.log(`[fossick] thumbnails: ${done}/${total} (${generated} generated, ${failed} failed)`);
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send('util:thumb-progress', { done, total, generated, failed });
       }
     }
   }
 
-  // Process in parallel batches — 8 concurrent ffmpeg processes
-  const CONCURRENCY = 8;
+  const CONCURRENCY = Math.max(4, os.cpus().length);
   for (let i = 0; i < photos.length; i += CONCURRENCY) {
     await Promise.all(photos.slice(i, i + CONCURRENCY).map(processOne));
   }
@@ -1692,11 +1738,3 @@ ipcMain.handle('licence:deactivate', () => {
   db.prepare("DELETE FROM settings WHERE key = 'licence_key'").run();
   return { ok: true };
 });
-// autocommit test Wed May 20 16:02:50 CEST 2026
-// direct autocommit test Wed May 20 16:03:27 CEST 2026
-// autocommit js test Wed May 20 16:05:46 CEST 2026
-// chokidar detection test Wed May 20 16:06:23 CEST 2026
-// direct node autocommit test Wed May 20 16:06:48 CEST 2026
-// autocommit ready test Wed May 20 16:07:29 CEST 2026
-// autocommit push test Wed May 20 17:54:18 CEST 2026
-// meaningful commit test Wed May 20 21:50:14 CEST 2026

@@ -407,20 +407,25 @@ async function run() {
               console.log(`[fossick] thumb failed (sips) ${photo.filename}: ${err.message}`);
             }
           } else if (process.platform === 'darwin') {
-            // Videos on macOS: use qlmanage (Quick Look) — built-in, no dependencies
-            // qlmanage writes to a directory, naming the file <basename>.jpg
             try {
-              const thumbBasename = path.basename(thumbPath, '_t.jpg');
               const qlOutDir = path.dirname(thumbPath);
               await execFileAsync('qlmanage', [
                 '-t', '-s', '280', '-o', qlOutDir, photo.file_path,
               ], { timeout: 30000 });
-              // qlmanage names the output: original_filename.jpg or .png
-              const qlOut = path.join(qlOutDir, path.basename(photo.file_path) + '.jpg');
-              const qlOutPng = path.join(qlOutDir, path.basename(photo.file_path) + '.png');
-              const qlResult = fs.existsSync(qlOut) ? qlOut : (fs.existsSync(qlOutPng) ? qlOutPng : null);
-              if (qlResult && fs.statSync(qlResult).size > 100) {
-                fs.renameSync(qlResult, thumbPath);
+              const srcBasename = path.basename(photo.file_path);
+              // qlmanage names output: original_filename + .png
+              const qlOut = path.join(qlOutDir, srcBasename + '.png');
+              console.log(`[fossick] qlmanage: looking for ${qlOut}, exists=${fs.existsSync(qlOut)}`);
+              // Also list what's actually in the output dir (first run only)
+              if (!global._qlDirLogged) {
+                global._qlDirLogged = true;
+                try {
+                  const dirContents = fs.readdirSync(qlOutDir).slice(0, 10);
+                  console.log(`[fossick] qlmanage outdir contents: ${dirContents.join(', ')}`);
+                } catch {}
+              }
+              if (fs.existsSync(qlOut) && fs.statSync(qlOut).size > 100) {
+                fs.renameSync(qlOut, thumbPath);
                 updateThumb.run(thumbPath, photo.id);
               } else {
                 console.log(`[fossick] thumb empty (qlmanage) ${photo.filename}`);
