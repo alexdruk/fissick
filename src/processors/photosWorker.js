@@ -354,7 +354,8 @@ async function run() {
       const updateThumb = db.prepare(`UPDATE photos SET thumbnail_path = ? WHERE id = ?`);
 
       let thumbDone = 0;
-      const thumbTotal = allRows.length;
+      const thumbTotal  = allRows.length;
+      const thumbStartMs = Date.now();
 
       send('status', { phase: 'thumbnails',
         message: `Generating thumbnails for ${thumbTotal.toLocaleString()} photos…` });
@@ -408,28 +409,18 @@ async function run() {
             }
           } else if (process.platform === 'darwin') {
             try {
-              const qlOutDir = path.dirname(thumbPath);
+              const tmpOut = require('os').tmpdir() + '/fossick_ql_' + Date.now();
+              fs.mkdirSync(tmpOut, { recursive: true });
               await execFileAsync('qlmanage', [
-                '-t', '-s', '280', '-o', qlOutDir, photo.file_path,
-              ], { timeout: 30000 });
+                '-t', '-s', '280', '-o', tmpOut, photo.file_path,
+              ], { timeout: 30000, env: { ...process.env, QL_PLUGIN_DISABLE_COMPRESSION: '1' } });
               const srcBasename = path.basename(photo.file_path);
-              // qlmanage names output: original_filename + .png
-              const qlOut = path.join(qlOutDir, srcBasename + '.png');
-              console.log(`[fossick] qlmanage: looking for ${qlOut}, exists=${fs.existsSync(qlOut)}`);
-              // Also list what's actually in the output dir (first run only)
-              if (!global._qlDirLogged) {
-                global._qlDirLogged = true;
-                try {
-                  const dirContents = fs.readdirSync(qlOutDir).slice(0, 10);
-                  console.log(`[fossick] qlmanage outdir contents: ${dirContents.join(', ')}`);
-                } catch {}
-              }
+              const qlOut = path.join(tmpOut, srcBasename + '.png');
               if (fs.existsSync(qlOut) && fs.statSync(qlOut).size > 100) {
                 fs.renameSync(qlOut, thumbPath);
                 updateThumb.run(thumbPath, photo.id);
-              } else {
-                console.log(`[fossick] thumb empty (qlmanage) ${photo.filename}`);
               }
+              try { fs.rmSync(tmpOut, { recursive: true }); } catch {}
             } catch (err) {
               console.log(`[fossick] thumb failed (qlmanage) ${photo.filename}: ${err.message}`);
             }
@@ -456,11 +447,19 @@ async function run() {
 
         thumbDone++;
         if (thumbDone % 100 === 0 || thumbDone === thumbTotal) {
+          const elapsed  = Date.now() - thumbStartMs;
+          const rate     = thumbDone / (elapsed / 1000);
+          const etaSecs  = rate > 0 ? Math.round((thumbTotal - thumbDone) / rate) : null;
+          const pct      = Math.round((thumbDone / thumbTotal) * 100);
+          if (thumbDone % 500 === 0 || thumbDone === thumbTotal) {
+            const eta = etaSecs ? ` — ETA ${Math.round(etaSecs / 60)}m` : '';
+            console.log(`[fossick] thumbnails ${pct}% — ${thumbDone.toLocaleString()} / ${thumbTotal.toLocaleString()}${eta}`);
+          }
           send('progress', {
             processed: thumbDone, total: thumbTotal,
             fixed, matched, failed,
-            percent: Math.round((thumbDone / thumbTotal) * 100),
-            etaSecs: null,
+            percent: pct,
+            etaSecs,
             phase: 'thumbnails',
           });
         }

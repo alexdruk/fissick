@@ -1422,9 +1422,11 @@ ipcMain.handle('trips:get-clusters', () => {
     .filter(c => c.cnt >= 10)
     .slice(0, 50)
     .map((c, i) => {
-      // Check settings cache for previously-geocoded country data
-      const key    = `geocode:${c.clat.toFixed(4)}:${c.clng.toFixed(4)}`;
-      const cached = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key);
+      // Check settings cache — try 4dp first, then fall back to 2dp for centroid-shift tolerance
+      const key4  = `geocode:${c.clat.toFixed(4)}:${c.clng.toFixed(4)}`;
+      const key2  = `geocode:${c.clat.toFixed(2)}:${c.clng.toFixed(2)}`;
+      const cached = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key4)
+                  || db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key2);
       let name = null, country = null;
       if (cached) {
         try { const p = JSON.parse(cached.value); name = p.name; country = p.country || null; } catch {}
