@@ -1101,7 +1101,8 @@ document.getElementById('ext-filter-select').addEventListener('change', async (e
   _updateSelectionUI();
 });
 
-// ── Generate Thumbnails — backfill missing thumbnails without reprocessing ──────
+// ── Generate Thumbnails — disabled: thumbnails generated during processing ──────
+/*
 document.getElementById('btn-generate-thumbs').addEventListener('click', async () => {
   const btn       = document.getElementById('btn-generate-thumbs');
   const wrap      = document.getElementById('thumb-progress-wrap');
@@ -1136,6 +1137,7 @@ document.getElementById('btn-generate-thumbs').addEventListener('click', async (
     btn.disabled = false;
   }
 });
+*/
 
 const HEIC_EXTS  = ['heic','heif'];
 const VIDEO_EXTS_LB = ['mov','mp4','m4v','avi','mkv','3gp'];
