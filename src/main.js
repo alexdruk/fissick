@@ -1416,9 +1416,11 @@ ipcMain.handle('trips:get-clusters', () => {
 
   merged.sort((a, b) => b.cnt - a.cnt);
 
-  // Return ALL clusters — the renderer groups by country and shows top-10 per country.
+  // Cap at 50 — home zones are always in the top most-photographed locations.
+  // 280+ clusters geocoded at 1 req/sec = 5 minutes. 50 = ~50 seconds max, usually faster with cache.
   const allClusters = merged
     .filter(c => c.cnt >= 10)
+    .slice(0, 50)
     .map((c, i) => {
       // Check settings cache for previously-geocoded country data
       const key    = `geocode:${c.clat.toFixed(4)}:${c.clng.toFixed(4)}`;
