@@ -1672,6 +1672,33 @@ ipcMain.handle('util:show-confirm-dialog', async (_event, { title, message, butt
   return response === 1; // true = confirmed (second button)
 });
 
+// Search a place name via Nominatim (for home zone modal)
+ipcMain.handle('trips:search-location', async (_event, { query }) => {
+  if (!query || query.trim().length < 2) return { results: [] };
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Fossick/1.0' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { results: [] };
+    const data = await res.json();
+    return {
+      results: data.map(r => ({
+        displayName: r.display_name,
+        name: [r.address?.city || r.address?.town || r.address?.village ||
+               r.address?.county || r.name, r.address?.country].filter(Boolean).join(', '),
+        country:     r.address?.country || null,
+        countryCode: (r.address?.country_code || '').toUpperCase() || null,
+        lat:         parseFloat(r.lat),
+        lng:         parseFloat(r.lon),
+      })),
+    };
+  } catch {
+    return { results: [] };
+  }
+});
+
 ipcMain.handle('settings:get-working-folder', () => {
   const wf = getWorkingFolder();
   const dbPath = getDbPath();

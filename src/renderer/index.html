@@ -1002,61 +1002,27 @@ html, body {
 .tdm-popup-wrap .leaflet-popup-content { margin: 0; padding: 8px; }
 
 /* ════════════════════════════════════════
-   HOME ZONE MODAL
+   HOME ZONE MODAL — search-based
 ════════════════════════════════════════ */
 #home-zone-modal {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(28,26,20,.65);
-  z-index: 300;
-  align-items: center;
-  justify-content: center;
+  display: none; position: fixed; inset: 0;
+  background: rgba(28,26,20,.65); z-index: 300;
+  align-items: center; justify-content: center;
 }
 #home-zone-modal.open { display: flex; }
 .hz-modal-box {
-  background: var(--panel);
-  border: 1px solid var(--border2);
-  border-radius: 8px;
-  width: 860px;
-  max-width: 96vw;
-  max-height: 88vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  background: var(--panel); border: 1px solid var(--border2);
+  border-radius: 8px; width: 760px; max-width: 96vw; max-height: 88vh;
+  display: flex; flex-direction: column; overflow: hidden;
   box-shadow: 0 20px 60px rgba(0,0,0,.25);
 }
 .hz-modal-header { padding: 20px 24px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .hz-modal-header h2 { font-family: var(--serif); font-size: 21px; color: var(--ink); margin-bottom: 5px; }
 .hz-modal-header p  { font-size: 12.5px; color: var(--mu); line-height: 1.6; }
-.hz-modal-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
-#hz-map { flex: 1; min-height: 360px; }
-#hz-list { width: 248px; flex-shrink: 0; overflow-y: auto; border-left: 1px solid var(--border); }
-.hz-list-hint { font-family: var(--mono); font-size: 9px; color: var(--dim); padding: 10px 14px 6px; letter-spacing: .04em; text-transform: uppercase; }
-.hz-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 14px; cursor: pointer;
-  border-bottom: 1px solid var(--border); transition: background .08s;
-}
-.hz-item:last-child { border-bottom: none; }
-.hz-item:hover    { background: var(--panel2); }
-.hz-item.checked  { background: var(--acc-lt); }
-.hz-num {
-  width: 24px; height: 24px; border-radius: 50%;
-  background: var(--panel2); border: 1.5px solid var(--border2);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: 10px; font-weight: 500;
-  flex-shrink: 0; color: var(--ink);
-  transition: background .1s, border-color .1s, color .1s;
-}
-.hz-item.checked .hz-num { background: var(--acc); border-color: var(--acc); color: #fff; }
-.hz-item-info { flex: 1; min-width: 0; }
-.hz-item-name  { font-size: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; line-height: 1.3; }
-.hz-item-name.loading { color: var(--dim); font-style: italic; font-weight: 400; }
-.hz-item-count { font-family: var(--mono); font-size: 9px; color: var(--dim); margin-top: 1px; }
+.hz-modal-body { display: flex; flex: 1; min-height: 0; overflow: hidden; min-height: 340px; }
 .hz-modal-footer {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; padding: 11px 20px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 20px; border-top: 1px solid var(--border);
   flex-shrink: 0; background: var(--panel2);
 }
 .hz-attribution { font-family: var(--mono); font-size: 9px; color: var(--dim); }
@@ -1075,35 +1041,71 @@ html, body {
 }
 .hz-btn-confirm:disabled { opacity: .4; cursor: default; pointer-events: none; }
 .hz-btn-confirm:not(:disabled):hover { background: #a04e24; }
-.hz-pin {
-  width: 26px; height: 26px; border-radius: 50%;
-  background: var(--panel); border: 2px solid var(--border2);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: 10px; font-weight: 500;
-  color: var(--ink); cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0,0,0,.18);
-  transition: background .1s, border-color .1s, color .1s;
+/* Search pane */
+#hz-search-pane {
+  flex: 1; display: flex; flex-direction: column;
+  padding: 16px 18px; gap: 12px; border-right: 1px solid var(--border);
+  overflow-y: auto;
 }
-.hz-pin.checked { background: var(--acc); border-color: var(--acc); color: #fff; }
-
-/* Country group in home-zone modal */
-.hz-country-group { border-bottom: 2px solid var(--border); }
-.hz-country-group:last-child { border-bottom: none; }
-.hz-country-header {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 14px; cursor: pointer;
-  background: var(--panel2);
-  border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; z-index: 1;
-  transition: background .08s;
-  user-select: none;
+#hz-input-wrap { display: flex; gap: 8px; }
+#hz-search-input {
+  flex: 1; font-family: var(--sans); font-size: 13px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--border2); border-radius: 4px;
+  padding: 8px 12px; outline: none; transition: border-color .1s;
 }
-.hz-country-header:hover { background: var(--border); }
-.hz-country-arrow { font-size: 9px; color: var(--dim); width: 10px; flex-shrink: 0; }
-.hz-country-info  { flex: 1; min-width: 0; }
-.hz-country-name  { font-family: var(--serif); font-size: 14px; color: var(--ink); display: block; line-height: 1.3; }
-.hz-country-meta  { font-family: var(--mono); font-size: 9px; color: var(--dim); }
-.hz-country-items.collapsed { display: none; }
+#hz-search-input:focus { border-color: var(--acc); }
+#hz-search-btn {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+  background: var(--ink); color: #f5f0e8; border: none; border-radius: 4px;
+  padding: 8px 16px; cursor: pointer; white-space: nowrap; transition: background .1s;
+}
+#hz-search-btn:hover { background: #2a2518; }
+#hz-search-btn:disabled { opacity: .4; cursor: default; pointer-events: none; }
+#hz-search-status { font-family: var(--mono); font-size: 10px; color: var(--dim); min-height: 14px; }
+#hz-confirm-card {
+  border: 1px solid var(--border); border-radius: 5px; overflow: hidden; background: var(--panel);
+}
+#hz-confirm-map { height: 160px; background: var(--panel2); }
+#hz-confirm-info { padding: 12px 14px; }
+#hz-confirm-name { font-family: var(--serif); font-size: 15px; color: var(--ink); margin-bottom: 3px; }
+#hz-confirm-detail { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-bottom: 10px; }
+#hz-confirm-actions { display: flex; gap: 8px; }
+#hz-confirm-yes {
+  font-family: var(--sans); font-size: 12px; font-weight: 500;
+  background: var(--green); color: #fff; border: none; border-radius: 4px;
+  padding: 6px 14px; cursor: pointer; transition: opacity .1s;
+}
+#hz-confirm-yes:hover { opacity: .85; }
+#hz-confirm-no {
+  font-family: var(--mono); font-size: 10px; color: var(--mu);
+  background: transparent; border: 1px solid var(--border); border-radius: 4px;
+  padding: 5px 12px; cursor: pointer;
+}
+#hz-confirm-no:hover { border-color: var(--border2); color: var(--ink); }
+/* Homes list pane */
+#hz-homes-pane {
+  width: 240px; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto;
+}
+.hz-homes-label {
+  font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .1em;
+  padding: 12px 14px 6px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+#hz-homes-empty { font-family: var(--mono); font-size: 10px; color: var(--dim); padding: 14px; }
+.hz-home-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.hz-home-item:last-child { border-bottom: none; }
+.hz-home-icon { font-size: 18px; flex-shrink: 0; line-height: 1.4; }
+.hz-home-info { flex: 1; min-width: 0; }
+.hz-home-name { font-size: 12px; font-weight: 500; color: var(--ink); line-height: 1.4; }
+.hz-home-coords { font-family: var(--mono); font-size: 9px; color: var(--dim); margin-top: 1px; }
+.hz-home-remove {
+  font-family: var(--mono); font-size: 11px; color: var(--dim);
+  background: transparent; border: none; cursor: pointer; padding: 0 2px;
+  line-height: 1; flex-shrink: 0; margin-top: 2px;
+}
+.hz-home-remove:hover { color: var(--red); }
 
 /* Sort select */
 .trips-sort-wrap { display: flex; align-items: center; gap: 6px; }
@@ -1495,12 +1497,37 @@ html, body {
   <div class="hz-modal-box">
     <div class="hz-modal-header">
       <h2>Where is home?</h2>
-      <p>These are your most-photographed locations. Check <strong>only the places you actually lived</strong> — past and present addresses. Cities you visited often should <em>not</em> be checked — those become trips.</p>
+      <p>Type each place you have lived — city, neighbourhood, or address. Fossick will find it and add it as a home zone. Trips are journeys that take you more than 50 km from all your home zones.</p>
     </div>
     <div class="hz-modal-body">
-      <div id="hz-map"></div>
-      <div id="hz-list">
-        <div class="hz-list-hint">Select home zones</div>
+
+      <!-- Left: search input + confirmation -->
+      <div id="hz-search-pane">
+        <div id="hz-input-wrap">
+          <input id="hz-search-input" type="text" placeholder="e.g. Conte, France or San Francisco, CA"
+                 autocomplete="off" spellcheck="false">
+          <button id="hz-search-btn">Search</button>
+        </div>
+        <div id="hz-search-status"></div>
+        <div id="hz-confirm-card" style="display:none">
+          <div id="hz-confirm-map"></div>
+          <div id="hz-confirm-info">
+            <div id="hz-confirm-name"></div>
+            <div id="hz-confirm-detail"></div>
+            <div id="hz-confirm-actions">
+              <button id="hz-confirm-yes">✓ Add as home</button>
+              <button id="hz-confirm-no">✗ Not this place</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: confirmed homes list -->
+      <div id="hz-homes-pane">
+        <div class="hz-homes-label">YOUR HOME ZONES</div>
+        <div id="hz-homes-list">
+          <div id="hz-homes-empty">No home zones added yet</div>
+        </div>
       </div>
     </div>
     <div class="hz-modal-footer">

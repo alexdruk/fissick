@@ -1358,21 +1358,15 @@ function _showTripsPanel(show) {
 const Trips = (() => {
   'use strict';
 
-  // ── Home zone modal state ─────────────────────────────────────────────────
-  let _hzMap             = null;
-  let _hzMarkers         = [];
-  let _hzClusters        = [];
-  let _hzChecked         = new Set();
-  let _geocodeUnsub      = null;
-  let _collapsedCountries = new Set();
-  let _groupRenderTimer  = null;
-  let _geocodeExpected   = 0;
-  let _geocodeReceived   = 0;
+  // ── Home zone state ──────────────────────────────────────────────────────────
+  let _homeZones      = [];  // [{ lat, lng, name, countryCode }]
+  let _hzConfirmMap   = null;
+  let _hzConfirmResult = null;  // current search result awaiting confirmation
 
   // ── List + detail state ───────────────────────────────────────────────────
   let _currentSort       = 'chrono';
   let _sortListenerAdded = false;
-  let _activeTrip        = null;  // trip object currently shown in detail
+  let _activeTrip        = null;
 
   // ── Country flag helper ───────────────────────────────────────────────────
   function _flag(code) {
@@ -1413,8 +1407,7 @@ const Trips = (() => {
     state.trips.computing   = false;
     if (state.trips.unsubEvent) { state.trips.unsubEvent(); state.trips.unsubEvent = null; }
     if (state.trips.unsubName)  { state.trips.unsubName();  state.trips.unsubName  = null; }
-    TripDetailMap.destroy();
-    _activeTrip = null;
+    TripMaps.destroyAll();
     _setTripsPanelState('empty');
   }
 
@@ -1432,10 +1425,10 @@ const Trips = (() => {
   }
 
   function _setTripsPanelState(mode) {
-    const empty    = document.getElementById('trips-empty');
+    const empty     = document.getElementById('trips-empty');
     const computing = document.getElementById('trips-computing');
-    const list     = document.getElementById('trips-list');
-    const detail   = document.getElementById('trips-detail');
+    const list      = document.getElementById('trips-list');
+    const detail    = document.getElementById('trips-detail');
     if (!empty || !computing || !list) return;
     empty.style.display     = mode === 'empty'     ? '' : 'none';
     computing.style.display = mode === 'computing' ? '' : 'none';
@@ -1447,9 +1440,7 @@ const Trips = (() => {
 
   async function _loadAndRenderTrips() {
     _setTripsPanelState('list');
-    TripDetailMap.destroy();
-    _activeTrip = null;
-
+    TripMaps.destroyAll();
     const ORDER = {
       'chrono':      'start_ts ASC',
       'chrono-desc': 'start_ts DESC',
@@ -1458,36 +1449,24 @@ const Trips = (() => {
       'distance':    'distance_km DESC, start_ts ASC',
     };
     const { trips, total } = await window.tt.getTrips({
-      limit: 200,
-      orderBy: ORDER[_currentSort] || 'start_ts ASC',
+      limit: 200, orderBy: ORDER[_currentSort] || 'start_ts ASC',
     });
-
     const sortSel = document.getElementById('trips-sort-select');
     if (sortSel) sortSel.value = _currentSort;
-
     const countEl = document.getElementById('trips-list-count');
     if (countEl) countEl.textContent = `${total.toLocaleString()} trip${total !== 1 ? 's' : ''}`;
-
-    // Remove existing cards
     const list = document.getElementById('trips-list');
     [...list.querySelectorAll('.trip-card')].forEach(el => el.remove());
-
-    for (const trip of trips) {
-      const card = _renderTripCard(trip);
-      list.appendChild(card);
-    }
-
-    // Live name + flag + distance updates from background geocoding
+    for (const trip of trips) list.appendChild(_renderTripCard(trip));
+    requestAnimationFrame(() => { trips.forEach(t => TripMaps.observe(`trip-map-${t.id}`)); });
     if (state.trips.unsubName) state.trips.unsubName();
-    state.trips.unsubName = window.tt.onTripNameUpdate(({ tripId, name, countryCode, distKm }) => {
+    state.trips.unsubName = window.tt.onTripNameUpdate(({ tripId, name, countryCode }) => {
       const card = document.querySelector(`.trip-card[data-trip-id="${tripId}"]`);
       if (!card) return;
       const nameEl = card.querySelector('.tc-name');
       const flagEl = card.querySelector('.tc-flag');
-      const distEl = card.querySelector('.tc-stat-dist');
       if (nameEl && name) nameEl.textContent = name;
       if (flagEl && countryCode) flagEl.textContent = _flag(countryCode);
-      if (distEl && distKm != null) distEl.textContent = `${distKm.toLocaleString()} km from home`;
     });
   }
 
@@ -1495,19 +1474,14 @@ const Trips = (() => {
     const card = document.createElement('div');
     card.className = 'trip-card';
     card.dataset.tripId = trip.id;
-
-    const start   = new Date(trip.start_ts);
-    const end     = new Date(trip.end_ts);
-    const days    = Math.max(1, Math.round((trip.end_ts - trip.start_ts) / 86400000) + 1);
-    const fmt     = d => d.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' });
+    const start  = new Date(trip.start_ts);
+    const end    = new Date(trip.end_ts);
+    const days   = Math.max(1, Math.round((trip.end_ts - trip.start_ts) / 86400000) + 1);
+    const fmt    = d => d.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' });
     const sameDayStr = start.toDateString() === end.toDateString();
     const dateStr = sameDayStr ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
-
-    const flag    = _flag(trip.country_code);
-    const distStr = trip.distance_km != null
-      ? `${Math.round(trip.distance_km).toLocaleString()} km from home`
-      : '';
-
+    const flag   = _flag(trip.country_code);
+    const distStr = trip.distance_km != null ? `${Math.round(trip.distance_km).toLocaleString()} km from home` : '';
     card.innerHTML = `
       <div class="tc-flag">${_esc(flag)}</div>
       <div class="tc-body">
@@ -1519,7 +1493,6 @@ const Trips = (() => {
         </div>
       </div>
       <div class="tc-arrow">›</div>`;
-
     card.addEventListener('click', () => _openDetail(trip));
     return card;
   }
@@ -1529,25 +1502,15 @@ const Trips = (() => {
   async function _openDetail(trip) {
     _activeTrip = trip;
     _setTripsPanelState('detail');
-
     const titleEl = document.getElementById('trips-detail-title');
     const metaEl  = document.getElementById('trips-detail-meta');
-    const fmt     = d => new Date(d).toLocaleDateString('en',
-      { month: 'short', day: 'numeric', year: 'numeric' });
+    const fmt     = d => new Date(d).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' });
     const days    = Math.max(1, Math.round((trip.end_ts - trip.start_ts) / 86400000) + 1);
     const flag    = _flag(trip.country_code);
-
     if (titleEl) titleEl.textContent = `${flag} ${trip.name}`;
     if (metaEl)  metaEl.textContent  =
       `${fmt(trip.start_ts)} – ${fmt(trip.end_ts)} · ${days} days · ${(trip.photo_count||0).toLocaleString()} photos`;
-
-    // Resize detail map container to fill available space
-    _resizeDetailMap();
-
-    // Init the map — photo click opens the photo lightbox
-    await TripDetailMap.init('trips-detail-map', trip.id, (photo) => {
-      openLightbox(photo);
-    });
+    await TripDetailMap.init('trips-detail-map', trip.id, (photo) => { openLightbox(photo); });
   }
 
   function _closeDetail() {
@@ -1556,31 +1519,13 @@ const Trips = (() => {
     _loadAndRenderTrips();
   }
 
-  function _resizeDetailMap() {
-    // Let CSS flex handle it — just trigger an invalidate after render
-    requestAnimationFrame(() => {
-      try {
-        const container = document.getElementById('trips-detail-map');
-        if (container && container._leaflet_id) {
-          // If Leaflet already attached, invalidate size
-          // (handled inside TripDetailMap.init via setTimeout)
-        }
-      } catch {}
-    });
-  }
-
-  // ── Computing feedback ─────────────────────────────────────────────────────
+  // ── Computing state ─────────────────────────────────────────────────────────
 
   async function confirmHomeZones() {
-    if (_hzChecked.size === 0) return;
-
-    const confirmBtn = document.getElementById('btn-hz-confirm');
-    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Starting…'; }
-
-    const homeZones = [..._hzChecked].map(i => ({ lat: _hzClusters[i].lat, lng: _hzClusters[i].lng }));
+    const homeZones = _homeZones.map(h => ({ lat: h.lat, lng: h.lng }));
+    if (homeZones.length === 0) return;
     closeHomeZoneModal();
     state.trips.computing = true;
-
     _showTripsPanel(true);
     _setTripsPanelState('computing');
     const msgEl = document.getElementById('trips-computing-msg');
@@ -1589,7 +1534,6 @@ const Trips = (() => {
     if (msgEl) msgEl.textContent = 'Preparing analysis…';
     if (subEl) subEl.textContent = '';
     if (barEl) barEl.style.width = '2%';
-
     if (state.trips.unsubEvent) state.trips.unsubEvent();
     state.trips.unsubEvent = window.tt.onTripsEvent((msg) => {
       if (msg.type === 'trips-status') {
@@ -1613,246 +1557,137 @@ const Trips = (() => {
         console.error('[Trips] worker error:', msg.message, msg.stack);
       }
     });
-
     await window.tt.computeTrips({ homeZones });
   }
 
-  // ── Home zone modal ────────────────────────────────────────────────────────
+  // ── Home zone search modal ─────────────────────────────────────────────────
 
   async function openHomeZoneModal() {
     const modal = document.getElementById('home-zone-modal');
     if (!modal) return;
-    _hzChecked.clear();
-    _hzClusters = [];
-    _hzMarkers  = [];
-    const hzList = document.getElementById('hz-list');
-    if (hzList) hzList.innerHTML = '<div class="hz-list-hint">Loading clusters…</div>';
+    _homeZones = [];
+    _hzConfirmResult = null;
+    _renderHomesList();
+    _clearConfirmCard();
+    document.getElementById('hz-search-input').value = '';
+    document.getElementById('hz-search-status').textContent = '';
     document.getElementById('btn-hz-confirm').disabled = true;
     modal.classList.add('open');
-
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    _initHzMap();
-
-    try {
-      const { clusters, hasMore, total: totalClusters } = await window.tt.getClusters();
-      _hzClusters = clusters;
-      _renderHzClusters(clusters, hasMore, totalClusters);
-
-      _geocodeExpected = clusters.length;
-      _geocodeReceived = 0;
-
-      _geocodeUnsub = window.tt.onGeocodeResult(({ index, name, country }) => {
-        if (_hzClusters[index]) {
-          _hzClusters[index].name    = name;
-          _hzClusters[index].country = country || null;
-        }
-        const nameEl = document.querySelector(`.hz-item[data-index="${index}"] .hz-item-name`);
-        if (nameEl) { nameEl.textContent = name; nameEl.classList.remove('loading'); }
-        _geocodeReceived++;
-        clearTimeout(_groupRenderTimer);
-        if (_geocodeReceived >= _geocodeExpected) _renderGroupedList();
-        else _groupRenderTimer = setTimeout(_renderGroupedList, 600);
-      });
-
-      window.tt.geocodeBatch({ points: clusters.map(c => ({ index: c.index, lat: c.lat, lng: c.lng })) })
-        .catch(() => {})
-        .finally(() => {
-          if (_geocodeUnsub) { _geocodeUnsub(); _geocodeUnsub = null; }
-          clearTimeout(_groupRenderTimer);
-          _renderGroupedList();
-        });
-    } catch (err) {
-      if (hzList) hzList.innerHTML =
-        `<div class="hz-list-hint" style="color:var(--red)">Error: ${_esc(err.message)}</div>`;
-    }
-  }
-
-  function _initHzMap() {
-    const container = document.getElementById('hz-map');
-    if (!container || typeof L === 'undefined') return;
-    if (_hzMap) { try { _hzMap.remove(); } catch {} _hzMap = null; }
-    _hzMap = L.map('hz-map', { zoomControl: true, attributionControl: false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_hzMap);
-    _hzMap.setView([20, 0], 2);
-  }
-
-  function _renderHzClusters(clusters, hasMore, totalClusters) {
-    const hzList = document.getElementById('hz-list');
-    if (!hzList) return;
-    hzList.innerHTML = '<div class="hz-list-hint">Select home zones</div>';
-
-    const bounds = [];
-    _hzMarkers = [];
-
-    for (const c of clusters) {
-      const item = document.createElement('div');
-      item.className = 'hz-item';
-      item.dataset.index = c.index;
-      item.innerHTML = `
-        <div class="hz-num">${c.index + 1}</div>
-        <div class="hz-item-info">
-          <div class="hz-item-name loading">${c.lat.toFixed(3)}, ${c.lng.toFixed(3)}</div>
-          <div class="hz-item-count">${c.count.toLocaleString()} photos</div>
-        </div>`;
-      item.addEventListener('click', () => _toggleHz(c.index));
-      hzList.appendChild(item);
-
-      if (_hzMap) {
-        bounds.push([c.lat, c.lng]);
-        const icon = L.divIcon({
-          html: `<div class="hz-pin" id="hz-pin-${c.index}">${c.index + 1}</div>`,
-          className: '', iconSize: [26, 26], iconAnchor: [13, 13],
-        });
-        const marker = L.marker([c.lat, c.lng], { icon }).addTo(_hzMap);
-        marker.on('click', () => _toggleHz(c.index));
-        _hzMarkers.push({ marker, index: c.index });
-      }
-    }
-
-    if (_hzMap && bounds.length > 0) {
-      try { _hzMap.fitBounds(L.latLngBounds(bounds), { padding: [32, 32], maxZoom: 8 }); } catch {}
-      setTimeout(() => {
-        try {
-          _hzMap.invalidateSize();
-          _hzMap.fitBounds(L.latLngBounds(bounds), { padding: [32, 32], maxZoom: 8 });
-        } catch {}
-      }, 300);
-    }
-  }
-
-  function _renderGroupedList() {
-    const hzList = document.getElementById('hz-list');
-    if (!hzList || !_hzClusters.length) return;
-
-    // If no country data yet, show loading message and wait for geocoding
-    const geocodedCount = _hzClusters.filter(c => c.country).length;
-    if (geocodedCount === 0) {
-      hzList.innerHTML = '<div class="hz-list-hint">Geocoding locations…</div>';
-      return;
-    }
-
-    const groups = {};
-    for (const c of _hzClusters) {
-      // Skip clusters with no country yet — they'll appear after geocoding
-      if (!c.country) continue;
-      const key = c.country;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(c);
-    }
-
-    // Sort countries by total photo count; within each country top-10 by count
-    const sorted = Object.entries(groups)
-      .map(([country, list]) => ({
-        country,
-        list: list.sort((a,b) => b.count - a.count).slice(0, 10),
-        total: list.reduce((s, c) => s + c.count, 0),
-      }))
-      .sort((a, b) => b.total - a.total);
-
-    const scrollTop = hzList.scrollTop;
-    hzList.innerHTML = geocodedCount < _hzClusters.length
-      ? `<div class="hz-list-hint">Geocoding… ${geocodedCount}/${_hzClusters.length}</div>`
-      : '<div class="hz-list-hint">Select home zones</div>';
-
-    for (const { country, list, total } of sorted) {
-      const checked   = list.filter(c => _hzChecked.has(c.index)).length;
-      // Auto-expand France/most-photographed country, collapse others unless checked
-      const isTop     = sorted[0]?.country === country;
-      const collapsed  = _collapsedCountries.has(country)
-        ? true
-        : (!_collapsedCountries.has('__expanded__' + country) && !isTop && checked === 0);
-
-      const metaParts = [`${list.length} location${list.length !== 1 ? 's' : ''}`,
-                         `${total.toLocaleString()} photos`];
-      if (checked) metaParts.push(`${checked} selected ✓`);
-
-      const group = document.createElement('div');
-      group.className = 'hz-country-group';
-      group.innerHTML = `
-        <div class="hz-country-header" data-country="${_esc(country)}">
-          <span class="hz-country-arrow">${collapsed ? '▶' : '▼'}</span>
-          <div class="hz-country-info">
-            <span class="hz-country-name">${_esc(country)}</span>
-            <span class="hz-country-meta">${metaParts.join(' · ')}</span>
-          </div>
-        </div>
-        <div class="hz-country-items${collapsed ? ' collapsed' : ''}"></div>`;
-
-      group.querySelector('.hz-country-header').addEventListener('click', () => _toggleCountry(country));
-
-      const itemsEl = group.querySelector('.hz-country-items');
-      for (const c of list) {
-        const cityName = c.name ? c.name.split(',')[0].trim()
-                                : `${c.lat.toFixed(3)}, ${c.lng.toFixed(3)}`;
-        const item = document.createElement('div');
-        item.className = 'hz-item' + (_hzChecked.has(c.index) ? ' checked' : '');
-        item.dataset.index = c.index;
-        item.innerHTML = `
-          <div class="hz-num">${c.index + 1}</div>
-          <div class="hz-item-info">
-            <div class="hz-item-name">${_esc(cityName)}</div>
-            <div class="hz-item-count">${c.count.toLocaleString()} photos</div>
-          </div>`;
-        item.addEventListener('click', () => _toggleHz(c.index));
-        itemsEl.appendChild(item);
-      }
-      hzList.appendChild(group);
-    }
-    hzList.scrollTop = scrollTop;
-  }
-
-  function _toggleCountry(country) {
-    if (_collapsedCountries.has(country)) _collapsedCountries.delete(country);
-    else _collapsedCountries.add(country);
-    const header = document.querySelector(`.hz-country-header[data-country="${CSS.escape(country)}"]`);
-    if (!header) { _renderGroupedList(); return; }
-    const group    = header.closest('.hz-country-group');
-    const items    = group?.querySelector('.hz-country-items');
-    const arrow    = header.querySelector('.hz-country-arrow');
-    const collapsed = _collapsedCountries.has(country);
-    if (items) items.classList.toggle('collapsed', collapsed);
-    if (arrow) arrow.textContent = collapsed ? '▶' : '▼';
-  }
-
-  function _toggleHz(index) {
-    if (_hzChecked.has(index)) _hzChecked.delete(index);
-    else _hzChecked.add(index);
-    const item  = document.querySelector(`.hz-item[data-index="${index}"]`);
-    if (item) item.classList.toggle('checked', _hzChecked.has(index));
-    const pinEl = document.getElementById(`hz-pin-${index}`);
-    if (pinEl) pinEl.classList.toggle('checked', _hzChecked.has(index));
-    document.getElementById('btn-hz-confirm').disabled = _hzChecked.size === 0;
-    // Update country header meta
-    const country = _hzClusters[index]?.country;
-    if (country) {
-      const header  = document.querySelector(`.hz-country-header[data-country="${CSS.escape(country)}"]`);
-      const metaEl  = header?.querySelector('.hz-country-meta');
-      if (metaEl) {
-        const group   = _hzClusters.filter(c => c.country === country);
-        const chk     = group.filter(c => _hzChecked.has(c.index)).length;
-        const tot     = group.reduce((s, c) => s + c.count, 0);
-        const parts   = [`${group.length} location${group.length !== 1 ? 's' : ''}`,
-                         `${tot.toLocaleString()} photos`];
-        if (chk) parts.push(`${chk} selected ✓`);
-        metaEl.textContent = parts.join(' · ');
-      }
-    }
+    setTimeout(() => document.getElementById('hz-search-input')?.focus(), 80);
   }
 
   function closeHomeZoneModal() {
     const modal = document.getElementById('home-zone-modal');
     if (modal) modal.classList.remove('open');
-    if (_geocodeUnsub) { _geocodeUnsub(); _geocodeUnsub = null; }
-    clearTimeout(_groupRenderTimer); _groupRenderTimer = null;
-    if (_hzMap) { try { _hzMap.remove(); } catch {} _hzMap = null; }
-    _hzMarkers = [];
-    _hzChecked.clear();
-    _collapsedCountries.clear();
+    if (_hzConfirmMap) { try { _hzConfirmMap.remove(); } catch {} _hzConfirmMap = null; }
+    _hzConfirmResult = null;
+  }
+
+  async function _doSearch() {
+    const input  = document.getElementById('hz-search-input');
+    const status = document.getElementById('hz-search-status');
+    const btn    = document.getElementById('hz-search-btn');
+    const query  = input?.value?.trim();
+    if (!query) return;
+
+    btn.disabled = true;
+    status.textContent = 'Searching…';
+    _clearConfirmCard();
+
+    try {
+      const { results } = await window.tt.searchLocation({ query });
+      btn.disabled = false;
+      if (!results || results.length === 0) {
+        status.textContent = 'No results found. Try a different spelling.';
+        return;
+      }
+      // Show the top result as a confirmation card
+      status.textContent = '';
+      _showConfirmCard(results[0]);
+    } catch {
+      btn.disabled = false;
+      status.textContent = 'Search failed. Check your connection.';
+    }
+  }
+
+  function _showConfirmCard(result) {
+    _hzConfirmResult = result;
+    const card    = document.getElementById('hz-confirm-card');
+    const nameEl  = document.getElementById('hz-confirm-name');
+    const detail  = document.getElementById('hz-confirm-detail');
+    if (nameEl) nameEl.textContent = result.name;
+    if (detail) detail.textContent = result.displayName;
+    card.style.display = '';
+
+    // Small preview map
+    if (_hzConfirmMap) { try { _hzConfirmMap.remove(); } catch {} _hzConfirmMap = null; }
+    if (typeof L !== 'undefined') {
+      requestAnimationFrame(() => {
+        _hzConfirmMap = L.map('hz-confirm-map', { zoomControl: false, attributionControl: false });
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_hzConfirmMap);
+        L.circleMarker([result.lat, result.lng], {
+          radius: 8, fillColor: '#b85c2c', color: '#8a3a10', weight: 2, fillOpacity: 0.9,
+        }).addTo(_hzConfirmMap);
+        _hzConfirmMap.setView([result.lat, result.lng], 10);
+        setTimeout(() => { try { _hzConfirmMap.invalidateSize(); } catch {} }, 80);
+      });
+    }
+  }
+
+  function _clearConfirmCard() {
+    const card = document.getElementById('hz-confirm-card');
+    if (card) card.style.display = 'none';
+    if (_hzConfirmMap) { try { _hzConfirmMap.remove(); } catch {} _hzConfirmMap = null; }
+    _hzConfirmResult = null;
+  }
+
+  function _confirmLocation() {
+    if (!_hzConfirmResult) return;
+    _homeZones.push(_hzConfirmResult);
+    _renderHomesList();
+    _clearConfirmCard();
+    const input = document.getElementById('hz-search-input');
+    const status = document.getElementById('hz-search-status');
+    if (input) { input.value = ''; input.focus(); }
+    if (status) status.textContent = `✓ Added. Search for another home, or click Confirm.`;
+    document.getElementById('btn-hz-confirm').disabled = false;
+  }
+
+  function _removeHome(index) {
+    _homeZones.splice(index, 1);
+    _renderHomesList();
+    document.getElementById('btn-hz-confirm').disabled = _homeZones.length === 0;
+  }
+
+  function _renderHomesList() {
+    const list  = document.getElementById('hz-homes-list');
+    const empty = document.getElementById('hz-homes-empty');
+    if (!list) return;
+    [...list.querySelectorAll('.hz-home-item')].forEach(el => el.remove());
+    if (_homeZones.length === 0) {
+      if (empty) empty.style.display = '';
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+    _homeZones.forEach((h, i) => {
+      const item = document.createElement('div');
+      item.className = 'hz-home-item';
+      item.innerHTML = `
+        <div class="hz-home-icon">${_esc(_flag(h.countryCode))}</div>
+        <div class="hz-home-info">
+          <div class="hz-home-name">${_esc(h.name)}</div>
+          <div class="hz-home-coords">${h.lat.toFixed(3)}, ${h.lng.toFixed(3)}</div>
+        </div>
+        <button class="hz-home-remove" title="Remove">✕</button>`;
+      item.querySelector('.hz-home-remove').addEventListener('click', () => _removeHome(i));
+      list.appendChild(item);
+    });
   }
 
   return {
     onTabActivated, reset,
     openHomeZoneModal, closeHomeZoneModal, confirmHomeZones,
+    doSearch: _doSearch, confirmLocation: _confirmLocation,
     closeDetail: _closeDetail,
   };
 })();
@@ -1870,6 +1705,16 @@ async function _recomputeTrips() {
 document.getElementById('btn-recompute-trips').addEventListener('click', _recomputeTrips);
 document.getElementById('btn-recompute-trips-empty').addEventListener('click', _recomputeTrips);
 
+document.getElementById('hz-search-btn').addEventListener('click', () => Trips.doSearch());
+document.getElementById('hz-search-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') Trips.doSearch();
+});
+document.getElementById('hz-confirm-yes').addEventListener('click', () => Trips.confirmLocation());
+document.getElementById('hz-confirm-no').addEventListener('click', () => {
+  document.getElementById('hz-confirm-card').style.display = 'none';
+  document.getElementById('hz-search-status').textContent = 'Try a more specific search.';
+  document.getElementById('hz-search-input').focus();
+});
 document.getElementById('btn-hz-cancel').addEventListener('click', () => Trips.closeHomeZoneModal());
 document.getElementById('btn-hz-confirm').addEventListener('click', () => Trips.confirmHomeZones());
 document.getElementById('home-zone-modal').addEventListener('click', (e) => {

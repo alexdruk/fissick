@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('tt', {
   // ── Trips ───────────────────────────────────────────────────────────────────
   getClusters:      ()     => ipcRenderer.invoke('trips:get-clusters'),
   getAllClusters:   ()     => ipcRenderer.invoke('trips:get-all-clusters'),
+  searchLocation:   (opts) => ipcRenderer.invoke('trips:search-location', opts),
   geocodeBatch:     (opts) => ipcRenderer.invoke('trips:geocode-batch', opts),
   computeTrips:     (opts) => ipcRenderer.invoke('trips:compute', opts),
   getTrips:         (opts) => ipcRenderer.invoke('trips:get-trips', opts),
