@@ -1108,6 +1108,29 @@ html, body {
 .hz-home-remove:hover { color: var(--red); }
 
 /* Sort select */
+.trips-search-wrap {
+  flex: 1; display: flex; gap: 4px; align-items: center;
+  max-width: 280px;
+}
+#trips-search-input {
+  flex: 1; font-family: var(--sans); font-size: 12px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--border2); border-radius: 4px;
+  padding: 4px 10px; outline: none; transition: border-color .1s;
+}
+#trips-search-input:focus { border-color: var(--acc); }
+#trips-search-input::placeholder { color: var(--dim); }
+#trips-search-clear {
+  font-family: var(--mono); font-size: 10px; color: var(--dim);
+  background: transparent; border: none; cursor: pointer; padding: 2px 4px;
+  line-height: 1;
+}
+#trips-search-clear:hover { color: var(--ink); }
+.trips-no-results {
+  font-family: var(--mono); font-size: 11px; color: var(--dim);
+  padding: 24px 28px; text-align: center;
+}
+
+/* Sort select */
 .trips-sort-wrap { display: flex; align-items: center; gap: 6px; }
 .trips-sort-label { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .06em; text-transform: uppercase; }
 .trips-sort-select {
@@ -1394,6 +1417,10 @@ html, body {
         <div id="trips-list" style="display:none">
           <div class="trips-list-header">
             <span class="trips-list-count" id="trips-list-count"></span>
+            <div class="trips-search-wrap">
+              <input id="trips-search-input" type="text" placeholder="Search by name, country or year…" autocomplete="off">
+              <button id="trips-search-clear" style="display:none" title="Clear search">✕</button>
+            </div>
             <div class="trips-sort-wrap">
               <label class="trips-sort-label" for="trips-sort-select">Sort</label>
               <select id="trips-sort-select" class="trips-sort-select">

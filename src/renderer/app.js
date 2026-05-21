@@ -1367,6 +1367,9 @@ const Trips = (() => {
   let _currentSort       = 'chrono';
   let _sortListenerAdded = false;
   let _activeTrip        = null;
+  let _allTrips          = [];    // full unfiltered list
+  let _searchQuery       = '';
+  let _searchListenerAdded = false;
 
   // ── Country flag helper ───────────────────────────────────────────────────
   function _flag(code) {
@@ -1393,6 +1396,26 @@ const Trips = (() => {
         _sortListenerAdded = true;
       }
     }
+    if (!_searchListenerAdded) {
+      const inp  = document.getElementById('trips-search-input');
+      const clr  = document.getElementById('trips-search-clear');
+      if (inp) {
+        inp.addEventListener('input', (e) => {
+          _searchQuery = e.target.value.trim().toLowerCase();
+          if (clr) clr.style.display = _searchQuery ? '' : 'none';
+          _renderFilteredCards();
+        });
+      }
+      if (clr) {
+        clr.addEventListener('click', () => {
+          _searchQuery = '';
+          if (inp) { inp.value = ''; inp.focus(); }
+          clr.style.display = 'none';
+          _renderFilteredCards();
+        });
+      }
+      _searchListenerAdded = true;
+    }
     if (state.trips.computing) { _showComputing(); return; }
     try {
       const { total } = await window.tt.getTrips({ limit: 1 });
@@ -1408,6 +1431,12 @@ const Trips = (() => {
     if (state.trips.unsubEvent) { state.trips.unsubEvent(); state.trips.unsubEvent = null; }
     if (state.trips.unsubName)  { state.trips.unsubName();  state.trips.unsubName  = null; }
     TripMaps.destroyAll();
+    _allTrips    = [];
+    _searchQuery = '';
+    const inp = document.getElementById('trips-search-input');
+    const clr = document.getElementById('trips-search-clear');
+    if (inp) inp.value = '';
+    if (clr) clr.style.display = 'none';
     _setTripsPanelState('empty');
   }
 
@@ -1458,10 +1487,8 @@ const Trips = (() => {
     if (sortSel) sortSel.value = _currentSort;
     const countEl = document.getElementById('trips-list-count');
     if (countEl) countEl.textContent = `${total.toLocaleString()} trip${total !== 1 ? 's' : ''}`;
-    const list = document.getElementById('trips-list');
-    [...list.querySelectorAll('.trip-card')].forEach(el => el.remove());
-    for (const trip of trips) list.appendChild(_renderTripCard(trip));
-    requestAnimationFrame(() => { trips.forEach(t => TripMaps.observe(`trip-map-${t.id}`)); });
+    _allTrips = trips;
+    _renderFilteredCards();
     if (state.trips.unsubName) state.trips.unsubName();
     state.trips.unsubName = window.tt.onTripNameUpdate(({ tripId, name, countryCode }) => {
       const card = document.querySelector(`.trip-card[data-trip-id="${tripId}"]`);
@@ -1471,6 +1498,32 @@ const Trips = (() => {
       if (nameEl && name) nameEl.textContent = name;
       if (flagEl && countryCode) flagEl.textContent = _flag(countryCode);
     });
+  }
+
+  function _renderFilteredCards() {
+    const list = document.getElementById('trips-list');
+    if (!list) return;
+    [...list.querySelectorAll('.trip-card, .trips-no-results')].forEach(el => el.remove());
+
+    const q = _searchQuery;
+    const filtered = q
+      ? _allTrips.filter(t => {
+          const year = t.start_ts ? new Date(t.start_ts).getFullYear().toString() : '';
+          return (t.name || '').toLowerCase().includes(q)
+              || year.includes(q);
+        })
+      : _allTrips;
+
+    if (filtered.length === 0 && q) {
+      const msg = document.createElement('div');
+      msg.className = 'trips-no-results';
+      msg.textContent = `No trips matching "${q}"`;
+      list.appendChild(msg);
+      return;
+    }
+
+    for (const trip of filtered) list.appendChild(_renderTripCard(trip));
+    requestAnimationFrame(() => { filtered.forEach(t => TripMaps.observe(`trip-map-${t.id}`)); });
   }
 
   function _renderTripCard(trip) {
