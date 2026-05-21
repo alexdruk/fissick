@@ -1643,8 +1643,8 @@ ipcMain.handle('trips:get-trip-thumbs', (_event, { tripId }) => {
 });
 
 ipcMain.handle('trips:reset', () => {
-  db.exec('DELETE FROM trips');
   db.prepare('UPDATE photos SET trip_id = NULL').run();
+  db.exec('DELETE FROM trips');
   return { ok: true };
 });
 
