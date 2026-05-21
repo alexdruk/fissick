@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<!-- fissick-renderer v22 -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self' 'unsafe-inline' local: https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com;
+           img-src 'self' local: data: https://*.tile.openstreetmap.org;
+           font-src 'self' https://fonts.gstatic.com;">
+<title>Fissick</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="anonymous"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="anonymous"/>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #f5f2ec;
+  --panel:     #faf8f4;
+  --panel2:    #ede9e0;
+  --border:    #d5cfc2;
+  --border2:   #c0b9a8;
+  --ink:       #1c1a14;
+  --mu:        #6b6454;
+  --dim:       #a09880;
+  --acc:       #b85c2c;
+  --acc-lt:    #f5ede6;
+  --acc-bdr:   #e8c4aa;
+  --green:     #2a6b3c;
+  --green-lt:  #e8f4ec;
+  --green-bdr: #b0d8bc;
+  --amber:     #8a6010;
+  --amber-lt:  #fdf5e0;
+  --amber-bdr: #e8d080;
+  --red:       #952020;
+  --red-lt:    #fbeaea;
+  --red-bdr:   #e8a8a8;
+  --blue:      #1e4d7a;
+  --blue-lt:   #e6eff8;
+  --blue-bdr:  #a8c8e8;
+  --serif: 'DM Serif Display', Georgia, serif;
+  --mono:  'DM Mono', monospace;
+  --sans:  'DM Sans', system-ui, sans-serif;
+  --r:     6px;
+  --tb:    48px;   /* titlebar height */
+  --sb:    220px;  /* sidebar width */
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13.5px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* ── Absolute layout — no grid, no flex, no height:auto surprises ── */
+#app      { position: absolute; inset: 0; }
+
+#titlebar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: var(--tb);
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding-left: 76px;
+  padding-right: 16px;
+  -webkit-app-region: drag;
+  z-index: 10;
+}
+
+#sidebar {
+  position: absolute;
+  top: var(--tb); left: 0; bottom: 0;
+  width: var(--sb);
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+}
+
+#main {
+  position: absolute;
+  top: var(--tb);
+  left: var(--sb);
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Views fill #main exactly — guaranteed height = window - titlebar */
+.view {
+  display: none;
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.view.active { display: block; }
+
+/* ── Titlebar ── */
+.tb-logo  { font-family: var(--serif); font-size: 16px; color: var(--ink); letter-spacing: -.01em; -webkit-app-region: no-drag; }
+.tb-dot   { color: var(--acc); }
+.tb-phase { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .12em; text-transform: uppercase; margin-left: auto; }
+
+/* ── Sidebar ── */
+.sb-section { font-family: var(--mono); font-size: 8.5px; color: var(--dim); letter-spacing: .14em; text-transform: uppercase; padding: 10px 18px 4px; }
+.sb-item    { display: flex; align-items: center; gap: 8px; padding: 6px 18px; color: var(--mu); font-size: 12.5px; cursor: default; border-left: 2px solid transparent; }
+.sb-item:hover  { color: var(--ink); background: var(--panel2); }
+.sb-item.active { color: var(--acc); background: var(--acc-lt); border-left-color: var(--acc); font-weight: 500; }
+.sb-divider     { height: 1px; background: var(--border); margin: 6px 0; }
+.sb-stat-row    { padding: 5px 18px; display: flex; justify-content: space-between; align-items: center; }
+.sb-stat-label  { font-family: var(--mono); font-size: 9px; color: var(--dim); }
+.sb-stat-value  { font-family: var(--mono); font-size: 11px; color: var(--ink); }
+.sb-stat-value.green { color: var(--green); }
+.sb-stat-value.amber { color: var(--amber); }
+.sb-stat-value.blue  { color: var(--blue); }
+
+/* ════════════════════════════════════════
+   IMPORT VIEW
+════════════════════════════════════════ */
+#view-import { padding: 40px; }
+.import-inner { max-width: 560px; margin: 0 auto; }
+
+.import-eyebrow { font-family: var(--mono); font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--acc); margin-bottom: 10px; }
+.import-title   { font-family: var(--serif); font-size: 32px; color: var(--ink); margin-bottom: 8px; line-height: 1.15; }
+.import-title i { color: var(--acc); font-style: italic; }
+.import-sub     { font-size: 13.5px; color: var(--mu); font-weight: 300; line-height: 1.7; margin-bottom: 28px; }
+
+.source-section  { margin-bottom: 6px; }
+.source-label    { font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); margin-bottom: 7px; }
+.source-divider  { font-family: var(--mono); font-size: 10px; color: var(--dim); text-align: center; padding: 10px 0; position: relative; }
+.source-divider::before, .source-divider::after { content: ''; position: absolute; top: 50%; width: calc(50% - 20px); height: 1px; background: var(--border); }
+.source-divider::before { left: 0; }
+.source-divider::after  { right: 0; }
+.source-feedback       { margin-top: 7px; font-family: var(--mono); font-size: 10px; color: var(--green); line-height: 1.6; }
+.source-feedback.error { color: var(--red); }
+
+.source-btn { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 14px; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 10px; width: 100%; transition: border-color .12s, background .12s; margin-bottom: 8px; }
+.source-btn:hover { border-color: var(--acc-bdr); background: var(--acc-lt); }
+.source-btn .s-icon { font-size: 18px; }
+.source-btn .s-text strong { display: block; font-size: 12.5px; color: var(--ink); font-weight: 500; }
+.source-btn .s-text span   { font-size: 11px; color: var(--dim); }
+
+#btn-start { width: 100%; background: var(--ink); color: #f5f0e8; border: none; border-radius: var(--r); padding: 13px 20px; font-family: var(--serif); font-size: 16px; cursor: pointer; letter-spacing: .01em; display: none; margin-top: 8px; }
+#btn-start:hover { background: #2a2518; }
+
+/* ════════════════════════════════════════
+   PROCESSING VIEW
+════════════════════════════════════════ */
+#view-processing { padding: 28px 48px 40px; }
+
+/* Pause / Abort controls */
+#proc-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 4px;
+  flex-wrap: wrap;
+}
+.proc-ctrl-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-radius: 5px;
+  padding: 7px 16px;
+  cursor: pointer;
+  border: 1px solid;
+  transition: background .12s;
+}
+.proc-ctrl-pause  { background: var(--amber-lt); color: var(--amber); border-color: var(--amber-border); }
+.proc-ctrl-pause:hover  { background: var(--amber); color: #fff; }
+.proc-ctrl-resume { background: var(--green-lt);  color: var(--green);  border-color: var(--green-border); }
+.proc-ctrl-resume:hover { background: var(--green); color: #fff; }
+.proc-ctrl-abort  { background: var(--red-lt);   color: var(--red);   border-color: var(--red-border); }
+.proc-ctrl-abort:hover  { background: var(--red); color: #fff; }
+#proc-paused-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--amber);
+  letter-spacing: .03em;
+}
+
+.back-btn { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--mu); background: transparent; border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; cursor: pointer; display: inline-block; margin-bottom: 20px; }
+.back-btn:hover { border-color: var(--border2); color: var(--ink); }
+
+.proc-title { font-family: var(--serif); font-size: 26px; color: var(--ink); margin-bottom: 4px; }
+.proc-sub   { font-size: 12.5px; color: var(--mu); margin-bottom: 24px; }
+
+.phase-row    { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
+.phase-badge  { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; border: 1px solid; }
+.phase-badge.extracting      { background: var(--blue-lt);  color: var(--blue);  border-color: var(--blue-bdr); }
+.phase-badge.scanning        { background: var(--amber-lt); color: var(--amber); border-color: var(--amber-bdr); }
+.phase-badge.indexing        { background: var(--amber-lt); color: var(--amber); border-color: var(--amber-bdr); }
+.phase-badge.processing      { background: var(--acc-lt);   color: var(--acc);   border-color: var(--acc-bdr); }
+.phase-badge.done            { background: var(--green-lt); color: var(--green); border-color: var(--green-bdr); }
+.phase-badge.error           { background: var(--red-lt);   color: var(--red);   border-color: var(--red-bdr); }
+.phase-badge.location-parsing { background: var(--blue-lt); color: var(--blue);  border-color: var(--blue-bdr); }
+.phase-badge.location-done   { background: var(--green-lt); color: var(--green); border-color: var(--green-bdr); }
+.phase-badge.location-error  { background: var(--red-lt);   color: var(--red);   border-color: var(--red-bdr); }
+.phase-message { font-size: 13px; color: var(--mu); }
+
+.progress-wrap { background: var(--panel2); border-radius: 3px; height: 6px; overflow: hidden; margin-bottom: 8px; }
+.progress-bar  { height: 100%; background: var(--acc); border-radius: 3px; width: 0%; transition: width .3s; }
+.progress-label { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--dim); margin-bottom: 20px; }
+
+.live-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }
+.live-stat  { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r); padding: 14px 16px; }
+.live-stat-val   { font-family: var(--serif); font-size: 28px; color: var(--ink); line-height: 1; margin-bottom: 3px; }
+.live-stat-val.green { color: var(--green); }
+.live-stat-val.amber { color: var(--amber); }
+.live-stat-label { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+
+.log-section { background: var(--ink); border-radius: var(--r); overflow: hidden; }
+.log-header  { background: #2a2720; border-bottom: 1px solid #3a3528; padding: 7px 14px; }
+.log-title   { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+#log-output  { font-family: var(--mono); font-size: 10.5px; color: #9a9080; padding: 12px 16px; height: 160px; overflow-y: auto; line-height: 1.8; user-select: text; }
+.log-ok  { color: #7ec87e; }
+.log-err { color: #e08080; }
+.log-dim { color: #5a5448; }
+
+/* ════════════════════════════════════════
+   RESULTS VIEW
+════════════════════════════════════════ */
+.results-header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 22px 36px 18px; }
+.results-title  { font-family: var(--serif); font-size: 24px; color: var(--ink); margin-bottom: 2px; }
+.results-subtitle { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .1em; text-transform: lowercase; margin-bottom: 12px; }
+.results-stats  { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.stat-pill       { display: flex; align-items: center; gap: 7px; background: var(--panel2); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; font-size: 12px; color: var(--mu); }
+.stat-pill .sp-val { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--ink); }
+.stat-pill.green   { background: var(--green-lt); border-color: var(--green-bdr); }
+.stat-pill.green .sp-val { color: var(--green); }
+.stat-pill.amber   { background: var(--amber-lt); border-color: var(--amber-bdr); }
+.stat-pill.amber .sp-val { color: var(--amber); }
+
+.filter-bar { display: flex; border-bottom: 1px solid var(--border); padding: 0 36px; background: var(--panel); }
+.filter-tab { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.filter-tab:hover  { color: var(--mu); }
+.filter-tab.active { color: var(--acc); border-bottom-color: var(--acc); }
+
+.photo-row { display: grid; grid-template-columns: 24px 48px 1fr auto auto auto; align-items: center; gap: 12px; padding: 8px 36px; border-bottom: 1px solid var(--border); }
+.photo-row:hover { background: var(--panel); }
+.photo-thumb { width: 48px; height: 36px; border-radius: 3px; object-fit: cover; background: var(--panel2); display: block; flex-shrink: 0; }
+.photo-thumb-placeholder { width: 48px; height: 36px; border-radius: 3px; background: var(--panel2); display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.photo-info .photo-name  { font-size: 12.5px; color: var(--ink); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px; }
+.photo-info .photo-meta  { font-family: var(--mono); font-size: 9.5px; color: var(--dim); }
+
+.tag        { font-family: var(--mono); font-size: 9px; font-weight: 500; padding: 3px 7px; border-radius: 3px; white-space: nowrap; }
+.tag-fixed  { background: var(--green-lt); color: var(--green); }
+.tag-fname  { background: var(--amber-lt); color: var(--amber); }
+.tag-none   { background: var(--red-lt);   color: var(--red); }
+.tag-found  { background: var(--blue-lt);  color: var(--blue); }
+.tag-gps    { background: var(--blue-lt);  color: var(--blue); }
+
+.list-footer { padding: 14px 36px; font-size: 12px; color: var(--dim); display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); }
+#btn-load-more { font-family: var(--mono); font-size: 10px; color: var(--acc); background: transparent; border: 1px solid var(--acc-bdr); border-radius: 20px; padding: 5px 14px; cursor: pointer; }
+
+/* ── Trial banner ── */
+#trial-banner {
+  display: none;
+  background: linear-gradient(135deg, #1c1a14 0%, #2a2518 100%);
+  border-radius: var(--r);
+  padding: 18px 22px;
+  margin: 16px 36px;
+  border: 1px solid #3a3420;
+}
+#trial-banner h3 { font-family: var(--serif); font-size: 18px; color: #f5f0e8; margin-bottom: 6px; }
+#trial-banner p  { font-size: 12.5px; color: #9a9080; line-height: 1.6; margin-bottom: 14px; }
+#trial-banner .trial-actions { display: flex; gap: 8px; align-items: center; }
+#btn-unlock { background: var(--acc); color: #fff; border: none; border-radius: var(--r); padding: 9px 18px; font-family: var(--serif); font-size: 15px; cursor: pointer; }
+#btn-unlock:hover { background: #a04e24; }
+.trial-price { font-family: var(--mono); font-size: 11px; color: #6b6050; }
+
+/* ════════════════════════════════════════
+   MAP PANEL
+════════════════════════════════════════ */
+#map-panel {
+  display: none;
+  flex-direction: column;
+  /* height is set by JS when panel is shown */
+}
+#map-panel.visible {
+  display: flex;
+}
+
+#map-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--mu);
+  flex-shrink: 0;
+}
+#map-decimation-notice { color: var(--amber); display: none; }
+
+#map-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 18px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--mu);
+  flex-shrink: 0;
+}
+#map-filter-bar .map-filter-label {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--dim);
+}
+#map-filter-bar label {
+  display: flex; align-items: center; gap: 6px;
+}
+.map-date-input {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 3px; padding: 3px 6px; color: var(--ink);
+  outline: none;
+}
+.map-date-input:focus { border-color: var(--acc); }
+.map-btn-apply {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em;
+  text-transform: uppercase; background: var(--acc); color: #fff;
+  border: none; border-radius: 3px; padding: 4px 12px; cursor: pointer;
+}
+.map-btn-clear {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em;
+  text-transform: uppercase; background: var(--panel); color: var(--mu);
+  border: 1px solid var(--border); border-radius: 3px; padding: 4px 12px; cursor: pointer;
+}
+.map-btn-clear:hover { border-color: var(--border2); color: var(--ink); }
+
+#location-map {
+  flex: 1;
+  min-height: 0;
+  border: none;
+}
+
+/* Override Leaflet's default z-index so it stays below our modal */
+.leaflet-pane { z-index: 1; }
+.leaflet-top, .leaflet-bottom { z-index: 2; }
+
+/* ── Export toolbar ── */
+#export-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 36px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#export-bar .export-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-right: 4px;
+}
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--mu);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: border-color .1s, color .1s, background .1s;
+  white-space: nowrap;
+}
+.export-btn:hover   { border-color: var(--acc-bdr); color: var(--acc); background: var(--acc-lt); }
+.export-btn:disabled { opacity: .4; cursor: default; pointer-events: none; }
+.export-btn .eb-icon { font-size: 13px; }
+
+/* Copy-fixed progress bar (shown inline in the export bar while copying) */
+#copy-progress-wrap {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+#copy-progress-bar-track {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  max-width: 160px;
+}
+#copy-progress-bar-fill {
+  height: 100%;
+  background: var(--acc);
+  border-radius: 2px;
+  width: 0%;
+  transition: width .2s;
+}
+#copy-progress-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mu);
+  white-space: nowrap;
+}
+#btn-copy-abort {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: var(--red-lt);
+  color: var(--red);
+  border: 1px solid var(--red-bdr);
+  border-radius: 4px;
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+#btn-copy-abort:hover { background: var(--red); color: #fff; }
+
+/* Date range filter row */
+#date-range-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 36px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.dr-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+.dr-input {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  outline: none;
+}
+.dr-input:focus { border-color: var(--acc); }
+.dr-picker-group { display: flex; gap: 4px; align-items: center; }
+.dr-select {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+  outline: none;
+  appearance: auto;
+}
+.dr-select:focus { border-color: var(--acc); }
+.dr-year  { width: 74px; }
+.dr-month { width: 62px; }
+.dr-day   { width: 52px; }
+
+.filter-bar-sep { width: 1px; background: var(--border); margin: 4px 4px; align-self: stretch; }
+.filter-ext-select { font-family: var(--mono); font-size: 10px; color: var(--ink); background: var(--bg); border: 1px solid var(--border2); border-radius: 4px; padding: 3px 6px; cursor: pointer; outline: none; max-width: 120px; }
+.filter-ext-select:focus { border-color: var(--acc); }
+
+/* Generate thumbnails bar */
+#thumb-gen-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 36px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+#thumb-progress-bar-track {
+  width: 120px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+#thumb-progress-bar-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 2px;
+  width: 0%;
+  transition: width .2s;
+}
+#thumb-progress-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mu);
+  white-space: nowrap;
+}
+.dr-btn {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border: 1px solid;
+}
+.dr-btn-apply { background: var(--acc-lt); color: var(--acc); border-color: var(--acc-bdr); }
+.dr-btn-apply:hover { background: var(--acc); color: #fff; }
+.dr-btn-clear { background: var(--panel2); color: var(--mu); border-color: var(--border2); }
+.dr-btn-clear:hover { background: var(--border2); color: var(--ink); }
+
+/* Settings panel */
+#settings-panel {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+}
+#settings-panel.open { display: block; }
+#settings-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  cursor: pointer;
+  z-index: 1;
+}
+#settings-box {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 400px;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.settings-title {
+  font-family: var(--serif);
+  font-size: 18px;
+  color: var(--ink);
+}
+#settings-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+#settings-close:hover { color: var(--ink); background: var(--panel2); }
+.settings-section {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-section-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--acc);
+  margin-bottom: 6px;
+}
+.settings-section-desc {
+  font-size: 12.5px;
+  color: var(--mu);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.wf-current {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.wf-path {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink);
+  word-break: break-all;
+  line-height: 1.5;
+}
+.wf-meta {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  margin-top: 4px;
+}
+.wf-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.wf-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .05em;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.wf-btn-primary { background: var(--acc-lt); color: var(--acc); border-color: var(--acc-bdr); }
+.wf-btn-primary:hover { background: var(--acc); color: #fff; }
+.wf-btn-secondary { background: var(--panel2); color: var(--mu); border-color: var(--border2); }
+.wf-btn-secondary:hover { background: var(--border2); color: var(--ink); }
+.wf-status {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+.wf-status.ok { background: var(--green-lt); color: var(--green); border: 1px solid var(--green-border); }
+.wf-status.err { background: var(--red-lt); color: var(--red); border: 1px solid var(--red-border); }
+.settings-paths { display: flex; flex-direction: column; gap: 6px; }
+.sp-row { display: flex; gap: 8px; align-items: baseline; }
+.sp-label { font-family: var(--mono); font-size: 9px; color: var(--dim); width: 80px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .06em; }
+.sp-val { font-family: var(--mono); font-size: 10px; color: var(--mu); word-break: break-all; line-height: 1.5; }
+
+/* Lightbox overlay */
+#lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9000; /* must exceed titlebar z-index:10 and any other overlay */
+}
+#lightbox.open { display: block; }
+#lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.92);
+  cursor: zoom-out;
+  z-index: 1;
+}
+/* X button: direct child of #lightbox, highest z-index, no parent pointer-events issues */
+#lightbox-close {
+  position: fixed; /* fixed so it's never clipped by any parent */
+  top: 48px;       /* below macOS traffic lights (~28px) + padding */
+  right: 20px;
+  z-index: 9999;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.45);
+  background: rgba(0,0,0,.55);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s;
+  -webkit-app-region: no-drag; /* prevent titlebar drag region from stealing clicks */
+}
+#lightbox-close:hover { background: rgba(255,255,255,.2); }
+/* Inner column: sits above backdrop, below X button */
+#lightbox-inner {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 20px 16px;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+#lightbox-img {
+  max-width: 90vw;
+  max-height: 72vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 16px 60px rgba(0,0,0,.7);
+  display: none;
+  pointer-events: auto;
+}
+#lightbox-video {
+  max-width: 90vw;
+  max-height: 72vh;
+  border-radius: 4px;
+  box-shadow: 0 16px 60px rgba(0,0,0,.7);
+  display: none;
+  pointer-events: auto;
+  background: #000;
+}
+#lightbox-footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+  pointer-events: auto;
+  flex-shrink: 0;
+}
+#lightbox-info {
+  color: rgba(255,255,255,.85);
+  font-family: var(--mono);
+  font-size: 11px;
+  background: rgba(0,0,0,.55);
+  padding: 5px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+#lightbox-back-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.3);
+  color: rgba(255,255,255,.85);
+  border-radius: 4px;
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s;
+}
+#lightbox-back-btn:hover { background: rgba(255,255,255,.25); color: #fff; }
+.photo-thumb-video { flex-direction: column; gap: 4px; font-size: 20px; }
+.thumb-video-label { font-family: var(--mono); font-size: 8px; color: var(--dim); letter-spacing: .06em; }
+
+/* ── Checkbox selection ── */
+.photo-row { cursor: pointer; }
+.photo-row:has(.photo-cb.checked) {
+  background: var(--acc-lt);
+  border-left: 2px solid var(--acc);
+}
+.photo-row:not(:has(.photo-cb.checked)) { border-left: 2px solid transparent; }
+
+.photo-cb {
+  appearance: none; -webkit-appearance: none;
+  width: 16px; height: 16px; flex-shrink: 0;
+  border: 1.5px solid var(--border2); border-radius: 3px;
+  background: var(--panel); cursor: pointer;
+  position: relative; transition: border-color .1s, background .1s;
+}
+.photo-cb:hover   { border-color: var(--acc); }
+.photo-cb.checked {
+  background: var(--acc); border-color: var(--acc);
+}
+.photo-cb.checked::after {
+  content: '';
+  position: absolute; top: 2px; left: 5px;
+  width: 4px; height: 8px;
+  border: 2px solid #fff; border-top: none; border-left: none;
+  transform: rotate(45deg);
+}
+
+/* Select-all row above the photo list */
+#select-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 36px;
+  background: var(--panel2); border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 10px; color: var(--mu);
+}
+#select-all-cb {
+  appearance: none; -webkit-appearance: none;
+  width: 14px; height: 14px; flex-shrink: 0;
+  border: 1.5px solid var(--border2); border-radius: 3px;
+  background: var(--panel); cursor: pointer; position: relative;
+  transition: border-color .1s, background .1s;
+}
+#select-all-cb:hover   { border-color: var(--acc); }
+#select-all-cb.checked { background: var(--acc); border-color: var(--acc); }
+#select-all-cb.checked::after {
+  content: '';
+  position: absolute; top: 1px; left: 4px;
+  width: 3px; height: 7px;
+  border: 2px solid #fff; border-top: none; border-left: none;
+  transform: rotate(45deg);
+}
+#select-all-cb.indeterminate { background: var(--border2); border-color: var(--border2); }
+#select-all-cb.indeterminate::after {
+  content: '';
+  position: absolute; top: 5px; left: 2px;
+  width: 8px; height: 2px; background: #fff; border: none; transform: none;
+}
+#selection-label { color: var(--mu); }
+#selection-label b { color: var(--ink); font-weight: 500; }
+
+/* ── Licence modal ── */
+#licence-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(28,26,20,.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+#licence-modal.open { display: flex; }
+.modal-box {
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 28px 32px;
+  width: 440px;
+  max-width: 90vw;
+}
+.modal-box h2 { font-family: var(--serif); font-size: 22px; color: var(--ink); margin-bottom: 6px; }
+.modal-box p  { font-size: 13px; color: var(--mu); line-height: 1.6; margin-bottom: 18px; }
+.modal-input  { width: 100%; font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--border2); border-radius: 4px; padding: 9px 12px; color: var(--ink); outline: none; margin-bottom: 10px; }
+.modal-input:focus { border-color: var(--acc); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.modal-btn-primary   { background: var(--ink); color: #f5f0e8; border: none; border-radius: var(--r); padding: 8px 18px; font-size: 13px; cursor: pointer; }
+.modal-btn-secondary { background: transparent; color: var(--mu); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 14px; font-size: 13px; cursor: pointer; }
+.modal-btn-primary:hover   { background: #2a2518; }
+.modal-btn-secondary:hover { border-color: var(--border2); color: var(--ink); }
+#licence-error   { font-size: 12px; color: var(--red);   margin-bottom: 10px; display: none; }
+#licence-success { font-size: 12px; color: var(--green); margin-bottom: 10px; display: none; }
+
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* ════════════════════════════════════════
+   TRIPS PANEL
+════════════════════════════════════════ */
+#trips-panel {
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+#trips-panel.visible { display: flex; }
+
+#trips-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trips-empty-inner {
+  text-align: center;
+  max-width: 420px;
+  padding: 0 24px;
+}
+.trips-empty-icon  { font-size: 48px; margin-bottom: 16px; line-height: 1; }
+.trips-empty-title { font-family: var(--serif); font-size: 22px; color: var(--ink); margin-bottom: 8px; }
+.trips-empty-sub   { font-size: 13px; color: var(--mu); line-height: 1.75; margin-bottom: 24px; }
+.trips-cta-btn     { background: var(--ink); color: #f5f0e8; border: none; border-radius: var(--r); padding: 12px 24px; font-family: var(--serif); font-size: 16px; cursor: pointer; }
+.trips-cta-btn:hover { background: #2a2518; }
+.trips-recompute-btn { font-family: var(--mono); font-size: 10px; color: var(--mu); background: transparent; border: 1px solid var(--border); border-radius: 4px; padding: 5px 12px; cursor: pointer; margin-top: 10px; }
+.trips-recompute-btn:hover { border-color: var(--border2); color: var(--ink); }
+
+#trips-computing {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trips-computing-inner {
+  text-align: center;
+  max-width: 400px;
+  width: 100%;
+  padding: 0 24px;
+}
+.trips-computing-msg { font-family: var(--serif); font-size: 18px; color: var(--ink); margin-bottom: 16px; }
+.trips-prog-wrap { background: var(--panel2); border-radius: 3px; height: 5px; overflow: hidden; margin-bottom: 8px; }
+.trips-prog-bar  { height: 100%; background: var(--acc); border-radius: 3px; width: 0%; transition: width .5s ease; }
+.trips-computing-sub { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+
+#trips-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0 48px;
+}
+.trips-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 28px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--panel);
+  position: sticky; top: 0; z-index: 2;
+}
+.trips-list-count { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+
+/* ── Trip card (list view — text only, no inline map) ── */
+.trip-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .08s;
+  user-select: none;
+}
+.trip-card:hover { background: var(--panel2); }
+.trip-card:last-child { border-bottom: none; }
+.tc-flag  { font-size: 26px; line-height: 1; flex-shrink: 0; width: 32px; text-align: center; }
+.tc-body  { flex: 1; min-width: 0; }
+.tc-name  { font-family: var(--serif); font-size: 16px; color: var(--ink); margin-bottom: 2px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tc-meta  { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-bottom: 5px; }
+.tc-stats { display: flex; gap: 6px; flex-wrap: wrap; }
+.tc-stat  {
+  font-family: var(--mono); font-size: 9px; color: var(--mu);
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 2px 7px;
+}
+.tc-arrow { font-size: 16px; color: var(--dim); flex-shrink: 0; }
+
+/* ── Trip detail panel ── */
+#trips-detail {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+#trips-detail.visible { display: flex; }
+#trips-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+#btn-trips-back {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+  background: transparent; color: var(--mu);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 5px 12px; cursor: pointer; flex-shrink: 0;
+  transition: border-color .1s, color .1s;
+}
+#btn-trips-back:hover { border-color: var(--border2); color: var(--ink); }
+#trips-detail-title-wrap { flex: 1; min-width: 0; }
+#trips-detail-title { font-family: var(--serif); font-size: 17px; color: var(--ink); display: block;
+                      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#trips-detail-meta  { font-family: var(--mono); font-size: 10px; color: var(--dim); display: block; margin-top: 1px; }
+#trips-detail-map   { flex: 1; min-height: 0; }
+
+/* ── Map pin styles (trip detail) ── */
+.tdm-pin {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--acc); border: 2px solid #8a3a10;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9px; font-weight: 600;
+  color: #fff; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+.tdm-tip { font-family: 'DM Mono', monospace; font-size: 10px; }
+.tdm-popup { text-align: center; padding: 4px; }
+.tdm-popup-loading {
+  font-family: var(--mono); font-size: 10px; color: var(--dim);
+  text-align: center; padding: 8px 0; width: 220px;
+}
+.tdm-popup-img { display: block; width: 220px; height: 165px;
+                 border-radius: 3px; margin: 0 auto 5px; object-fit: contain; background: #f0ede6; }
+.tdm-popup-name { font-family: 'DM Mono', monospace; font-size: 9.5px; color: var(--mu);
+                  word-break: break-all; max-width: 200px; }
+.tdm-popup-date { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--dim); margin-top: 2px; }
+.tdm-popup-wrap .leaflet-popup-content-wrapper { padding: 0; border-radius: 6px; overflow: hidden; }
+.tdm-popup-wrap .leaflet-popup-content { margin: 0; padding: 8px; }
+
+/* ════════════════════════════════════════
+   HOME ZONE MODAL — search-based
+════════════════════════════════════════ */
+#home-zone-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(28,26,20,.65); z-index: 300;
+  align-items: center; justify-content: center;
+}
+#home-zone-modal.open { display: flex; }
+.hz-modal-box {
+  background: var(--panel); border: 1px solid var(--border2);
+  border-radius: 8px; width: 760px; max-width: 96vw; max-height: 88vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+.hz-modal-header { padding: 20px 24px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.hz-modal-header h2 { font-family: var(--serif); font-size: 21px; color: var(--ink); margin-bottom: 5px; }
+.hz-modal-header p  { font-size: 12.5px; color: var(--mu); line-height: 1.6; }
+.hz-modal-body { display: flex; flex: 1; min-height: 0; overflow: hidden; min-height: 340px; }
+.hz-modal-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 20px; border-top: 1px solid var(--border);
+  flex-shrink: 0; background: var(--panel2);
+}
+.hz-attribution { font-family: var(--mono); font-size: 9px; color: var(--dim); }
+.hz-attribution a { color: var(--acc); text-decoration: none; }
+.hz-modal-actions { display: flex; gap: 8px; }
+.hz-btn-cancel {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+  background: transparent; color: var(--mu);
+  border: 1px solid var(--border); border-radius: 4px; padding: 6px 14px; cursor: pointer;
+}
+.hz-btn-cancel:hover { border-color: var(--border2); color: var(--ink); }
+.hz-btn-confirm {
+  font-family: var(--sans); font-size: 12.5px; font-weight: 500;
+  background: var(--acc); color: #fff; border: none; border-radius: 4px;
+  padding: 7px 18px; cursor: pointer; transition: background .1s;
+}
+.hz-btn-confirm:disabled { opacity: .4; cursor: default; pointer-events: none; }
+.hz-btn-confirm:not(:disabled):hover { background: #a04e24; }
+/* Search pane */
+#hz-search-pane {
+  flex: 1; display: flex; flex-direction: column;
+  padding: 16px 18px; gap: 12px; border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+#hz-input-wrap { display: flex; gap: 8px; }
+#hz-search-input {
+  flex: 1; font-family: var(--sans); font-size: 13px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--border2); border-radius: 4px;
+  padding: 8px 12px; outline: none; transition: border-color .1s;
+}
+#hz-search-input:focus { border-color: var(--acc); }
+#hz-search-btn {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+  background: var(--ink); color: #f5f0e8; border: none; border-radius: 4px;
+  padding: 8px 16px; cursor: pointer; white-space: nowrap; transition: background .1s;
+}
+#hz-search-btn:hover { background: #2a2518; }
+#hz-search-btn:disabled { opacity: .4; cursor: default; pointer-events: none; }
+#hz-search-status { font-family: var(--mono); font-size: 10px; color: var(--dim); min-height: 14px; }
+#hz-confirm-card {
+  border: 1px solid var(--border); border-radius: 5px; overflow: hidden; background: var(--panel);
+}
+#hz-confirm-map { height: 160px; background: var(--panel2); }
+#hz-confirm-info { padding: 12px 14px; }
+#hz-confirm-name { font-family: var(--serif); font-size: 15px; color: var(--ink); margin-bottom: 3px; }
+#hz-confirm-detail { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-bottom: 10px; }
+#hz-confirm-actions { display: flex; gap: 8px; }
+#hz-confirm-yes {
+  font-family: var(--sans); font-size: 12px; font-weight: 500;
+  background: var(--green); color: #fff; border: none; border-radius: 4px;
+  padding: 6px 14px; cursor: pointer; transition: opacity .1s;
+}
+#hz-confirm-yes:hover { opacity: .85; }
+#hz-confirm-no {
+  font-family: var(--mono); font-size: 10px; color: var(--mu);
+  background: transparent; border: 1px solid var(--border); border-radius: 4px;
+  padding: 5px 12px; cursor: pointer;
+}
+#hz-confirm-no:hover { border-color: var(--border2); color: var(--ink); }
+/* Homes list pane */
+#hz-homes-pane {
+  width: 240px; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto;
+}
+.hz-homes-label {
+  font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .1em;
+  padding: 12px 14px 6px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+#hz-homes-empty { font-family: var(--mono); font-size: 10px; color: var(--dim); padding: 14px; }
+.hz-home-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.hz-home-item:last-child { border-bottom: none; }
+.hz-home-icon { font-size: 18px; flex-shrink: 0; line-height: 1.4; }
+.hz-home-info { flex: 1; min-width: 0; }
+.hz-home-name { font-size: 12px; font-weight: 500; color: var(--ink); line-height: 1.4; }
+.hz-home-coords { font-family: var(--mono); font-size: 9px; color: var(--dim); margin-top: 1px; }
+.hz-home-remove {
+  font-family: var(--mono); font-size: 11px; color: var(--dim);
+  background: transparent; border: none; cursor: pointer; padding: 0 2px;
+  line-height: 1; flex-shrink: 0; margin-top: 2px;
+}
+.hz-home-remove:hover { color: var(--red); }
+
+/* Sort select */
+.trips-sort-wrap { display: flex; align-items: center; gap: 6px; }
+.trips-sort-label { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .06em; text-transform: uppercase; }
+.trips-sort-select {
+  font-family: var(--mono); font-size: 10px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--border2);
+  border-radius: 4px; padding: 4px 8px; cursor: pointer; outline: none;
+}
+.trips-sort-select:focus { border-color: var(--acc); }
+.trip-lightbox-popup .trip-photo-popup-inner img { max-width: 240px; max-height: 180px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Titlebar -->
+  <div id="titlebar">
+    <span class="tb-logo">Fissick<span class="tb-dot">.</span></span>
+    <span style="font-family:var(--mono);font-size:9px;color:var(--dim);margin-left:8px">v22</span>
+    <span class="tb-phase" id="tb-phase">Import</span>
+    <button id="btn-settings" title="Settings" style="-webkit-app-region:no-drag;background:none;border:none;cursor:pointer;color:var(--dim);font-size:14px;padding:4px 8px;border-radius:4px;margin-left:8px;line-height:1" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--dim)'">⚙</button>
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sb-section">Workflow</div>
+    <div class="sb-item active" id="sb-import"><span>📦</span> Import</div>
+    <div class="sb-item" id="sb-process"><span>⚙️</span> Process</div>
+    <div class="sb-item" id="sb-results"><span>✅</span> Results</div>
+    <div class="sb-divider"></div>
+    <div class="sb-section">Last Run</div>
+    <div class="sb-stat-row"><span class="sb-stat-label">Total</span><span class="sb-stat-value" id="sb-total">—</span></div>
+    <div class="sb-stat-row"><span class="sb-stat-label">Fixed</span><span class="sb-stat-value green" id="sb-fixed">—</span></div>
+    <div class="sb-stat-row"><span class="sb-stat-label">No sidecar</span><span class="sb-stat-value amber" id="sb-unmatched">—</span></div>
+    <div class="sb-stat-row"><span class="sb-stat-label">With GPS</span><span class="sb-stat-value" id="sb-gps">—</span></div>
+    <div class="sb-stat-row"><span class="sb-stat-label">Locations</span><span class="sb-stat-value blue" id="sb-locations">—</span></div>
+    <div class="sb-divider"></div>
+    <div class="sb-item" id="sb-trips" style="display:none"><span>🌍</span> Trips</div>
+  </div>
+
+  <!-- Main area: exactly fills the space right of sidebar, below titlebar -->
+  <div id="main">
+
+    <!-- ══ IMPORT ══ -->
+    <div class="view active" id="view-import">
+      <div class="import-inner">
+        <div class="import-eyebrow">Module 1 · Photos + Location</div>
+        <div class="import-title">Fix your Google<br><i>Takeout archive</i></div>
+        <div class="import-sub">Restore dates and GPS to every photo and video — including the broken 2024 <code>supplemental-metadata.json</code> format. Also rebuilds your location Timeline as an interactive map.</div>
+
+        <div class="source-section">
+          <div class="source-label">Option A — I have ZIP files</div>
+          <button class="source-btn" id="btn-select-zips">
+            <span class="s-icon">🗜️</span>
+            <span class="s-text"><strong>Select ZIP files</strong><span>takeout-…-001.zip, -002.zip, etc.</span></span>
+          </button>
+          <div id="zip-feedback" class="source-feedback" style="display:none"></div>
+        </div>
+
+        <div class="source-divider">or</div>
+
+        <div class="source-section">
+          <div class="source-label">Option B — Already extracted</div>
+          <button class="source-btn" id="btn-select-folder">
+            <span class="s-icon">📁</span>
+            <span class="s-text"><strong>Select folder</strong><span>The folder containing "Google Photos"</span></span>
+          </button>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input id="manual-path-input" type="text" placeholder="or paste path: /Users/alex/Documents/fake-takeout"
+              style="flex:1;font-family:var(--mono);font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:7px 10px;color:var(--ink);outline:none">
+            <button id="btn-manual-path" style="font-family:var(--mono);font-size:10px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;padding:7px 12px;cursor:pointer;white-space:nowrap;color:var(--ink)">Use path</button>
+          </div>
+          <div id="folder-feedback" class="source-feedback" style="display:none"></div>
+        </div>
+
+        <button id="btn-start">Start processing →</button>
+      </div>
+    </div>
+
+    <!-- ══ PROCESSING ══ -->
+    <div class="view" id="view-processing">
+      <button class="back-btn" id="btn-back-processing">← Back</button>
+      <div class="proc-title">Processing your archive</div>
+      <div class="proc-sub">You can minimise this window — processing continues in the background.</div>
+
+      <div class="phase-row">
+        <span class="phase-badge processing" id="phase-badge">Processing</span>
+        <span class="phase-message" id="phase-message">Starting…</span>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+      <div class="progress-label">
+        <span id="progress-text">—</span>
+        <span id="progress-eta"></span>
+      </div>
+
+      <!-- Pause / Abort controls -->
+      <div id="proc-controls">
+        <button id="btn-pause-resume" class="proc-ctrl-btn proc-ctrl-pause">⏸ Pause</button>
+        <button id="btn-abort-processing" class="proc-ctrl-btn proc-ctrl-abort">⏹ Abort</button>
+        <span id="proc-paused-label" style="display:none">
+          ⏸ Paused — current file will finish, then processing stops.
+        </span>
+      </div>
+
+      <div class="live-stats">
+        <div class="live-stat"><div class="live-stat-val" id="stat-processed">0</div><div class="live-stat-label">Processed</div></div>
+        <div class="live-stat"><div class="live-stat-val green" id="stat-fixed">0</div><div class="live-stat-label">EXIF Fixed</div></div>
+        <div class="live-stat"><div class="live-stat-val" id="stat-matched">0</div><div class="live-stat-label">Sidecar Found</div></div>
+        <div class="live-stat"><div class="live-stat-val amber" id="stat-failed">0</div><div class="live-stat-label">No Sidecar</div></div>
+      </div>
+
+      <div class="log-section">
+        <div class="log-header"><span class="log-title">Activity log</span></div>
+        <div id="log-output"></div>
+      </div>
+    </div>
+
+    <!-- ══ RESULTS ══ -->
+    <div class="view" id="view-results">
+      <div class="results-header">
+        <button class="back-btn" id="btn-back-results" title="Clear results and start over">← New archive</button>
+        <div class="results-title">Results</div>
+        <div class="results-subtitle">processing complete</div>
+        <div class="results-stats" id="results-stats-row"></div>
+      </div>
+
+      <!-- Generate Thumbnails button (moved to export bar area) -->
+      <!-- Generate Thumbnails — disabled: thumbnails generated during processing
+      <div id="thumb-gen-bar">
+        <button id="btn-generate-thumbs" class="dr-btn dr-btn-apply"
+                title="Generate thumbnails for HEIC and video files">
+          🖼 Generate Thumbnails
+        </button>
+        <div id="thumb-progress-wrap" style="display:none">
+          <div id="thumb-progress-bar-track"><div id="thumb-progress-bar-fill"></div></div>
+          <span id="thumb-progress-label">Generating…</span>
+        </div>
+      </div>
+      -->
+
+      <!-- Export toolbar -->
+      <div id="export-bar">
+        <span class="export-label">Export</span>
+        <button class="export-btn" id="btn-export-gpx" style="display:none"
+                title="Export your location history as a GPX file — opens in Google Maps, Apple Maps, Garmin and most mapping apps">
+          <span class="eb-icon">🗺</span> Location GPX
+        </button>
+        <button class="export-btn" id="btn-export-map-html" style="display:none"
+                title="Save your location history as a self-contained web page — open it in any browser, share it with anyone, no app needed">
+          <span class="eb-icon">🌐</span> Interactive Map
+        </button>
+        <button class="export-btn" id="btn-export-csv"
+                title="Export the selected photos as a spreadsheet — includes filename, date, GPS coordinates and fix status">
+          <span class="eb-icon">📋</span> Photos CSV
+        </button>
+        <button class="export-btn" id="btn-export-copy"
+                title="Copy the selected photos to a folder of your choice, with their dates and GPS already written in">
+          <span class="eb-icon">📂</span> Copy Fixed Files
+        </button>
+        <!-- Inline progress for copy operation -->
+        <div id="copy-progress-wrap">
+          <div id="copy-progress-bar-track">
+            <div id="copy-progress-bar-fill"></div>
+          </div>
+          <span id="copy-progress-label">Copying…</span>
+          <button id="btn-copy-abort" title="Stop copying">Abort</button>
+        </div>
+      </div>
+
+      <!-- Trial limit banner — shown only in trial mode -->
+      <div id="trial-banner">
+        <h3>100 photos fixed — full archive indexed</h3>
+        <p>The free trial fixes the first 100 photos. Your remaining photos were matched and indexed — unlock to write EXIF to all of them without re-importing.</p>
+        <div class="trial-actions">
+          <button id="btn-unlock">Unlock full version — $29</button>
+          <span class="trial-price">One-time · Mac + Windows · all future updates</span>
+        </div>
+      </div>
+
+      <!-- Filter / tab bar -->
+      <div class="filter-bar">
+        <div class="filter-tab active" data-filter="all">All</div>
+        <div class="filter-tab" data-filter="fixed">EXIF Fixed</div>
+        <div class="filter-tab" data-filter="unmatched">No Sidecar</div>
+        <div class="filter-tab" data-filter="failed">No Date</div>
+        <div class="filter-tab" data-filter="gps">Has GPS</div>
+        <div class="filter-bar-sep"></div>
+        <select id="ext-filter-select" class="dr-select filter-ext-select">
+          <option value="">All types</option>
+        </select>
+        <div class="filter-tab" data-filter="map" id="tab-map" style="display:none">🗺 Map</div>
+        <div class="filter-tab" data-filter="trips" id="tab-trips" style="display:none">🌍 Trips</div>
+      </div>
+
+      <!-- Date range filter row -->
+      <div id="date-range-bar">
+        <span class="dr-label">Date range</span>
+        <div class="dr-picker-group">
+          <select id="dr-from-year"  class="dr-select dr-year"><option value="">Year</option></select>
+          <select id="dr-from-month" class="dr-select dr-month">
+            <option value="">Month</option>
+            <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
+            <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
+            <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
+            <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
+          </select>
+          <select id="dr-from-day" class="dr-select dr-day"><option value="">Day</option></select>
+        </div>
+        <span class="dr-sep">→</span>
+        <div class="dr-picker-group">
+          <select id="dr-to-year"  class="dr-select dr-year"><option value="">Year</option></select>
+          <select id="dr-to-month" class="dr-select dr-month">
+            <option value="">Month</option>
+            <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
+            <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
+            <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
+            <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
+          </select>
+          <select id="dr-to-day" class="dr-select dr-day"><option value="">Day</option></select>
+        </div>
+        <button id="dr-apply" class="dr-btn dr-btn-apply">Apply</button>
+        <button id="dr-clear" class="dr-btn dr-btn-clear" style="display:none">Clear</button>
+      </div>
+
+      <!-- Select-all bar — shown above the photo list -->
+      <div id="select-bar">
+        <div id="select-all-cb" role="checkbox" aria-label="Select all"></div>
+        <span id="selection-label"><b id="sel-count">0</b> selected</span>
+      </div>
+
+      <!-- Photo list (hidden when map tab is active) -->
+      <div id="photo-list"></div>
+      <div class="list-footer">
+        <span id="list-count-label">—</span>
+        <button id="btn-load-more" style="display:none">Load more</button>
+      </div>
+
+      <!-- Map panel (shown only when map tab is active) -->
+      <div id="map-panel">
+
+        <div id="map-stats-bar">
+          <span id="map-point-count">—</span>
+          <span id="map-date-range">—</span>
+          <span id="map-decimation-notice">⚠ Large dataset — showing a representative sample</span>
+        </div>
+
+        <div id="map-filter-bar">
+          <span class="map-filter-label">Filter</span>
+          <label>From <input type="date" id="map-date-from" class="map-date-input"/></label>
+          <label>To   <input type="date" id="map-date-to"   class="map-date-input"/></label>
+          <button id="map-filter-apply" class="map-btn-apply">Apply</button>
+          <button id="map-filter-clear" class="map-btn-clear">Clear</button>
+        </div>
+
+        <div id="location-map"></div>
+
+      </div><!-- /map-panel -->
+
+      <!-- Trips panel -->
+      <div id="trips-panel">
+
+        <div id="trips-empty">
+          <div class="trips-empty-inner">
+            <div class="trips-empty-icon">🌍</div>
+            <h3 class="trips-empty-title">Discover your trips</h3>
+            <p class="trips-empty-sub">Fossick will analyse your location history and group it into discrete trips — combining your GPS routes and photos into a single view for each journey.</p>
+            <button id="btn-compute-trips" class="trips-cta-btn">Compute Trips</button>
+            <div style="margin-top:10px">
+              <button class="trips-recompute-btn" id="btn-recompute-trips-empty" style="display:none">↺ Recompute with different home zones</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="trips-computing" style="display:none">
+          <div class="trips-computing-inner">
+            <div class="trips-computing-msg" id="trips-computing-msg">Analysing location data…</div>
+            <div class="trips-prog-wrap"><div class="trips-prog-bar" id="trips-prog-bar"></div></div>
+            <div class="trips-computing-sub" id="trips-computing-sub"></div>
+          </div>
+        </div>
+
+        <div id="trips-list" style="display:none">
+          <div class="trips-list-header">
+            <span class="trips-list-count" id="trips-list-count"></span>
+            <div class="trips-sort-wrap">
+              <label class="trips-sort-label" for="trips-sort-select">Sort</label>
+              <select id="trips-sort-select" class="trips-sort-select">
+                <option value="chrono">Chronological ↑</option>
+                <option value="chrono-desc">Chronological ↓</option>
+                <option value="country">By name</option>
+                <option value="photos">Most photos first</option>
+                <option value="distance">Furthest first</option>
+              </select>
+            </div>
+            <button class="trips-recompute-btn" id="btn-recompute-trips">↺ Recompute</button>
+          </div>
+          <!-- trip cards appended here by JS -->
+        </div>
+
+        <!-- Trip detail — full-panel map for a single trip -->
+        <div id="trips-detail">
+          <div id="trips-detail-header">
+            <button id="btn-trips-back">← Back to trips</button>
+            <div id="trips-detail-title-wrap">
+              <span id="trips-detail-title"></span>
+              <span id="trips-detail-meta"></span>
+            </div>
+          </div>
+          <div id="trips-detail-map"></div>
+        </div>
+
+      </div><!-- /trips-panel -->
+
+    </div><!-- /view-results -->
+
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- Licence activation modal -->
+<div id="licence-modal">
+  <div class="modal-box">
+    <h2>Activate Fissick</h2>
+    <p>Enter your licence key from Gumroad. One key activates on up to 2 machines.</p>
+    <div id="licence-error"></div>
+    <div id="licence-success"></div>
+    <input id="licence-key-input" class="modal-input" type="text" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" spellcheck="false" autocomplete="off">
+    <div class="modal-actions">
+      <button class="modal-btn-secondary" id="btn-modal-cancel">Cancel</button>
+      <button class="modal-btn-primary" id="btn-modal-activate">Activate</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings panel -->
+<div id="settings-panel">
+  <div id="settings-backdrop"></div>
+  <div id="settings-box">
+    <div class="settings-header">
+      <div class="settings-title">Settings</div>
+      <button id="settings-close">✕</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-label">Working Folder</div>
+      <div class="settings-section-desc">Where Fossick stores its database, thumbnails, and extracted archives. Move this to a drive with more free space if your boot drive is full.</div>
+
+      <div id="wf-current" class="wf-current">
+        <div class="wf-path" id="wf-path-label">Loading…</div>
+        <div class="wf-meta" id="wf-meta-label"></div>
+      </div>
+
+      <div class="wf-actions">
+        <button id="btn-wf-browse" class="wf-btn wf-btn-primary">📁 Choose folder…</button>
+        <button id="btn-wf-clear" class="wf-btn wf-btn-secondary" style="display:none">Reset to default</button>
+      </div>
+      <div id="wf-status" class="wf-status" style="display:none"></div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-label">Current paths</div>
+      <div class="settings-paths">
+        <div class="sp-row"><span class="sp-label">Database</span><span class="sp-val" id="sp-db">—</span></div>
+        <div class="sp-row"><span class="sp-label">Thumbnails</span><span class="sp-val" id="sp-thumbs">—</span></div>
+        <div class="sp-row"><span class="sp-label">Free space</span><span class="sp-val" id="sp-free">—</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Lightbox overlay -->
+<div id="lightbox">
+  <div id="lightbox-backdrop"></div>
+  <div id="lightbox-inner">
+    <img id="lightbox-img" alt="">
+    <video id="lightbox-video" controls playsinline preload="metadata"></video>
+    <div id="lightbox-footer">
+      <div id="lightbox-info"></div>
+      <button id="lightbox-back-btn">← Back to photos</button>
+    </div>
+  </div>
+</div>
+
+<!-- Home zone confirmation modal — must be BEFORE scripts so getElementById finds it -->
+<div id="home-zone-modal">
+  <div class="hz-modal-box">
+    <div class="hz-modal-header">
+      <h2>Where is home?</h2>
+      <p>Type each place you have lived — city, neighbourhood, or address. Add all homes past and present. Fossick will find each one and add it as a home zone. Distance shown on trips is always measured from the <strong>nearest</strong> home zone.</p>
+    </div>
+    <div class="hz-modal-body">
+
+      <!-- Left: search input + confirmation -->
+      <div id="hz-search-pane">
+        <div id="hz-input-wrap">
+          <input id="hz-search-input" type="text" placeholder="e.g. Conte, France or San Francisco, CA"
+                 autocomplete="off" spellcheck="false">
+          <button id="hz-search-btn">Search</button>
+        </div>
+        <div id="hz-search-status"></div>
+        <div id="hz-confirm-card" style="display:none">
+          <div id="hz-confirm-map"></div>
+          <div id="hz-confirm-info">
+            <div id="hz-confirm-name"></div>
+            <div id="hz-confirm-detail"></div>
+            <div id="hz-confirm-actions">
+              <button id="hz-confirm-yes">✓ Add as home</button>
+              <button id="hz-confirm-no">✗ Not this place</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: confirmed homes list -->
+      <div id="hz-homes-pane">
+        <div class="hz-homes-label">YOUR HOME ZONES</div>
+        <div id="hz-homes-list">
+          <div id="hz-homes-empty">No home zones added yet</div>
+        </div>
+      </div>
+    </div>
+    <div class="hz-modal-footer">
+      <span class="hz-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap contributors</a></span>
+      <div class="hz-modal-actions">
+        <button class="hz-btn-cancel" id="btn-hz-cancel">Cancel</button>
+        <button class="hz-btn-confirm" id="btn-hz-confirm" disabled>Confirm &amp; Compute Trips</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin="anonymous"></script>
+<script src="locationMap.js"></script>
+<script src="tripsMap.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
