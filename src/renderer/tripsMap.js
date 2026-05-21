@@ -74,7 +74,7 @@ const TripDetailMap = (() => {
         { direction: 'top', offset: [0, -14], sticky: false }
       );
 
-      // Click popup — thumbnail + click-through to lightbox
+      // Click popup — thumbnail with loading placeholder + autopan to avoid header clip
       const src = _encodePath(ph.thumbnail_path || ph.file_path);
       const dateStr = ph.date_ts
         ? new Date(ph.date_ts).toLocaleDateString(undefined,
@@ -82,11 +82,20 @@ const TripDetailMap = (() => {
         : '';
       marker.bindPopup(
         `<div class="tdm-popup">` +
-        `<img class="tdm-popup-img" src="local://${src}" onerror="this.style.display='none'" alt="">` +
+        `<div class="tdm-popup-loading">Loading…</div>` +
+        `<img class="tdm-popup-img" src="local://${src}"` +
+        ` onload="this.previousElementSibling.style.display='none'"` +
+        ` onerror="this.previousElementSibling.textContent='No preview';this.style.display='none'" alt="">` +
         `<div class="tdm-popup-name">${_esc(ph.filename)}</div>` +
         (dateStr ? `<div class="tdm-popup-date">${dateStr}</div>` : '') +
         `</div>`,
-        { maxWidth: 260, className: 'tdm-popup-wrap' }
+        {
+          maxWidth: 260,
+          className: 'tdm-popup-wrap',
+          autoPan: true,
+          autoPanPaddingTopLeft:     L.point(20, 80),
+          autoPanPaddingBottomRight: L.point(20, 20),
+        }
       );
 
       // Click on popup image → open lightbox
