@@ -247,6 +247,14 @@ app.whenReady().then(() => {
   try { db.exec('ALTER TABLE trips ADD COLUMN country_code TEXT'); } catch {}
   try { db.exec('ALTER TABLE trips ADD COLUMN country TEXT'); } catch {}
   try { db.exec('ALTER TABLE trips ADD COLUMN distance_km REAL'); } catch {}
+  // Clear cached geocode results that may have non-English names (one-time migration)
+  try {
+    const migDone = db.prepare(`SELECT value FROM settings WHERE key = 'geocode_en_migrated'`).get();
+    if (!migDone) {
+      db.prepare(`DELETE FROM settings WHERE key LIKE 'geocode:%'`).run();
+      db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`).run('geocode_en_migrated', '1');
+    }
+  } catch {}
   createWindow();
 
   // Intercept window close — show confirmation if processing is active
@@ -1485,12 +1493,13 @@ ipcMain.handle('trips:geocode-batch', async (_event, { points }) => {
       if (rateLimitNeeded) await delay(1150);
       rateLimitNeeded = true;
       try {
+        // Request English names via accept-language header
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${p.lat}&lon=${p.lng}&format=json`,
-          { headers: { 'User-Agent': 'Fossick/1.0' }, signal: AbortSignal.timeout(8000) }
+          `https://nominatim.openstreetmap.org/reverse?lat=${p.lat}&lon=${p.lng}&format=json&accept-language=en`,
+          { headers: { 'User-Agent': 'Fossick/1.0', 'Accept-Language': 'en' }, signal: AbortSignal.timeout(8000) }
         );
         if (res.ok) {
-          const data = await res.json();
+          const data  = await res.json();
           const addr  = data.address || {};
           const city  = addr.city || addr.town || addr.village || addr.county || addr.state || '';
           country     = addr.country || null;
@@ -1582,8 +1591,8 @@ async function _geocodeTripNames(items) {
       first = false;
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${item.lat}&lon=${item.lng}&format=json`,
-          { headers: { 'User-Agent': 'Fossick/1.0' }, signal: AbortSignal.timeout(8000) }
+          `https://nominatim.openstreetmap.org/reverse?lat=${item.lat}&lon=${item.lng}&format=json&accept-language=en`,
+          { headers: { 'User-Agent': 'Fossick/1.0', 'Accept-Language': 'en' }, signal: AbortSignal.timeout(8000) }
         );
         if (res.ok) {
           const data = await res.json();

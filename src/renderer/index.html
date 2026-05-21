@@ -1130,8 +1130,23 @@ html, body {
   padding: 24px 28px; text-align: center;
 }
 
-/* Sort select */
-.trips-sort-wrap { display: flex; align-items: center; gap: 6px; }
+/* Autocomplete dropdown */
+.autocomplete-wrap { position: relative; flex: 1; display: flex; }
+.autocomplete-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 200;
+  background: var(--panel); border: 1px solid var(--border2); border-top: none;
+  border-radius: 0 0 4px 4px; box-shadow: 0 6px 16px rgba(0,0,0,.12);
+  max-height: 220px; overflow-y: auto;
+}
+.autocomplete-item {
+  padding: 7px 12px; font-size: 12.5px; color: var(--ink); cursor: pointer;
+  border-bottom: 1px solid var(--border); line-height: 1.4;
+}
+.autocomplete-item:last-child { border-bottom: none; }
+.autocomplete-item:hover, .autocomplete-item.focused { background: var(--acc-lt); color: var(--acc); }
+.autocomplete-sub { font-family: var(--mono); font-size: 9.5px; color: var(--dim); margin-top: 1px; }
+
+/* Sort select */ align-items: center; gap: 6px; }
 .trips-sort-label { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .06em; text-transform: uppercase; }
 .trips-sort-select {
   font-family: var(--mono); font-size: 10px; color: var(--ink);
@@ -1418,7 +1433,10 @@ html, body {
           <div class="trips-list-header">
             <span class="trips-list-count" id="trips-list-count"></span>
             <div class="trips-search-wrap">
-              <input id="trips-search-input" type="text" placeholder="Search by name, country or year…" autocomplete="off">
+              <div class="autocomplete-wrap">
+                <input id="trips-search-input" type="text" placeholder="Search by name, country or year…" autocomplete="off">
+                <div id="trips-search-dropdown" class="autocomplete-dropdown" style="display:none"></div>
+              </div>
               <button id="trips-search-clear" style="display:none" title="Clear search">✕</button>
             </div>
             <div class="trips-sort-wrap">
@@ -1534,8 +1552,11 @@ html, body {
       <!-- Left: search input + confirmation -->
       <div id="hz-search-pane">
         <div id="hz-input-wrap">
-          <input id="hz-search-input" type="text" placeholder="e.g. Conte, France or San Francisco, CA"
-                 autocomplete="off" spellcheck="false">
+          <div class="autocomplete-wrap">
+            <input id="hz-search-input" type="text" placeholder="e.g. Conte, France or San Francisco, CA"
+                   autocomplete="off" spellcheck="false">
+            <div id="hz-search-dropdown" class="autocomplete-dropdown" style="display:none"></div>
+          </div>
           <button id="hz-search-btn">Search</button>
         </div>
         <div id="hz-search-status"></div>

@@ -1405,6 +1405,11 @@ const Trips = (() => {
           if (clr) clr.style.display = _searchQuery ? '' : 'none';
           _renderFilteredCards();
         });
+        // Hook for autocomplete to trigger filter with selected value
+        window._tripsSearchTrigger = (val) => {
+          _searchQuery = val.toLowerCase();
+          _renderFilteredCards();
+        };
       }
       if (clr) {
         clr.addEventListener('click', () => {
@@ -1486,6 +1491,7 @@ const Trips = (() => {
     const sortSel = document.getElementById('trips-sort-select');
     if (sortSel) sortSel.value = _currentSort;
     _allTrips = trips;
+    window._allTripsForAc = trips;
     _renderFilteredCards();
     if (state.trips.unsubName) state.trips.unsubName();
     state.trips.unsubName = window.tt.onTripNameUpdate(({ tripId, name, countryCode }) => {
@@ -1751,6 +1757,7 @@ const Trips = (() => {
     onTabActivated, reset,
     openHomeZoneModal, closeHomeZoneModal, confirmHomeZones,
     doSearch: _doSearch, confirmLocation: _confirmLocation,
+    showConfirmFromResult: _showConfirmCard,
     closeDetail: _closeDetail,
   };
 })();
@@ -1784,12 +1791,131 @@ document.getElementById('home-zone-modal').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) Trips.closeHomeZoneModal();
 });
 
-// ── Init ───────────────────────────────────────────────────────────────────────
+// ── Autocomplete utility ────────────────────────────────────────────────────────
+// Autocomplete(inputId, dropdownId, getSuggestions, onSelect)
+// getSuggestions(query) → Promise<[{label, sub, value}]>
+// onSelect(item) → called when user picks a suggestion
+function Autocomplete(inputId, dropdownId, getSuggestions, onSelect) {
+  const inp  = document.getElementById(inputId);
+  const drop = document.getElementById(dropdownId);
+  if (!inp || !drop) return;
+
+  let _timer = null, _focused = -1, _items = [];
+
+  function _show(items) {
+    _items   = items;
+    _focused = -1;
+    drop.innerHTML = '';
+    if (!items.length) { drop.style.display = 'none'; return; }
+    items.forEach((item, i) => {
+      const el = document.createElement('div');
+      el.className = 'autocomplete-item';
+      el.innerHTML = `<div>${_acEsc(item.label)}</div>` +
+        (item.sub ? `<div class="autocomplete-sub">${_acEsc(item.sub)}</div>` : '');
+      el.addEventListener('mousedown', (e) => { e.preventDefault(); _pick(i); });
+      drop.appendChild(el);
+    });
+    drop.style.display = '';
+  }
+
+  function _hide() { drop.style.display = 'none'; _focused = -1; _items = []; }
+
+  function _pick(i) {
+    const item = _items[i];
+    if (!item) return;
+    inp.value = item.label;
+    _hide();
+    onSelect(item);
+  }
+
+  function _highlight(dir) {
+    const els = drop.querySelectorAll('.autocomplete-item');
+    if (!els.length) return;
+    els[_focused]?.classList.remove('focused');
+    _focused = (_focused + dir + els.length) % els.length;
+    els[_focused]?.classList.add('focused');
+  }
+
+  inp.addEventListener('input', () => {
+    clearTimeout(_timer);
+    const q = inp.value.trim();
+    if (q.length < 2) { _hide(); return; }
+    _timer = setTimeout(async () => {
+      const suggestions = await getSuggestions(q);
+      _show(suggestions);
+    }, 250);
+  });
+
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown')  { e.preventDefault(); _highlight(1); }
+    else if (e.key === 'ArrowUp')   { e.preventDefault(); _highlight(-1); }
+    else if (e.key === 'Enter' && _focused >= 0) { e.stopPropagation(); _pick(_focused); }
+    else if (e.key === 'Escape') _hide();
+  });
+
+  inp.addEventListener('blur', () => setTimeout(_hide, 150));
+}
+
+function _acEsc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Trip search autocomplete ────────────────────────────────────────────────────
+Autocomplete(
+  'trips-search-input',
+  'trips-search-dropdown',
+  async (q) => {
+    if (!q) return [];
+    const ql = q.toLowerCase();
+    const matches = (window._allTripsForAc || []).filter(t =>
+      (t.name || '').toLowerCase().includes(ql) ||
+      (t.start_ts ? new Date(t.start_ts).getFullYear().toString() : '').includes(ql)
+    ).slice(0, 8);
+    return matches.map(t => ({
+      label: t.name || 'Trip',
+      sub:   t.start_ts ? new Date(t.start_ts).getFullYear().toString() : '',
+      value: t,
+    }));
+  },
+  (item) => {
+    const inp = document.getElementById('trips-search-input');
+    const clr = document.getElementById('trips-search-clear');
+    if (inp) inp.value = item.label;
+    if (clr) clr.style.display = '';
+    // Trigger filter
+    window._tripsSearchTrigger?.(item.label);
+  }
+);
+
+// ── Home zone search autocomplete ───────────────────────────────────────────────
+Autocomplete(
+  'hz-search-input',
+  'hz-search-dropdown',
+  async (q) => {
+    try {
+      const { results } = await window.tt.searchLocation({ query: q });
+      return (results || []).slice(0, 5).map(r => ({
+        label: r.name,
+        sub:   r.displayName,
+        value: r,
+      }));
+    } catch { return []; }
+  },
+  (item) => {
+    // Show the confirmation card directly without requiring Search button click
+    Trips.showConfirmFromResult(item.value);
+  }
+);
 async function init() {
   await refreshLicenceStatus();
-  showView('import');
   const stats = await window.tt.getStats();
-  if (stats && stats.total > 0) updateSidebarStats(stats);
+  if (stats && stats.total > 0) {
+    updateSidebarStats(stats);
+    await loadResults();
+    showView('results');
+  } else {
+    showView('import');
+  }
 
   // Check free space on working folder — warn if under 20GB
   try {
