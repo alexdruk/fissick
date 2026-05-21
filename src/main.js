@@ -1677,13 +1677,16 @@ ipcMain.handle('util:show-confirm-dialog', async (_event, { title, message, butt
 ipcMain.handle('trips:search-location', async (_event, { query }) => {
   if (!query || query.trim().length < 2) return { results: [] };
   try {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`;
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&accept-language=en`;
+    console.log(`[fossick] searchLocation: ${query}`);
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'Fossick/1.0' },
+      headers: { 'User-Agent': 'Fossick/1.0', 'Accept-Language': 'en' },
       signal: AbortSignal.timeout(8000),
     });
+    console.log(`[fossick] searchLocation status: ${res.status}`);
     if (!res.ok) return { results: [] };
     const data = await res.json();
+    console.log(`[fossick] searchLocation found: ${data.length}`);
     return {
       results: data.map(r => ({
         displayName: r.display_name,
@@ -1695,8 +1698,9 @@ ipcMain.handle('trips:search-location', async (_event, { query }) => {
         lng:         parseFloat(r.lon),
       })),
     };
-  } catch {
-    return { results: [] };
+  } catch (err) {
+    console.error(`[fossick] searchLocation error: ${err.message}`);
+    return { results: [], error: err.message };
   }
 });
 

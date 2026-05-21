@@ -1672,18 +1672,21 @@ const Trips = (() => {
     _clearConfirmCard();
 
     try {
-      const { results } = await window.tt.searchLocation({ query });
+      const res = await window.tt.searchLocation({ query });
       btn.disabled = false;
-      if (!results || results.length === 0) {
+      if (!res || res.error) {
+        status.textContent = `Search failed: ${res?.error || 'unknown error'}`;
+        return;
+      }
+      if (!res.results || res.results.length === 0) {
         status.textContent = 'No results found. Try a different spelling.';
         return;
       }
-      // Show the top result as a confirmation card
       status.textContent = '';
-      _showConfirmCard(results[0]);
-    } catch {
+      _showConfirmCard(res.results[0]);
+    } catch (err) {
       btn.disabled = false;
-      status.textContent = 'Search failed. Check your connection.';
+      status.textContent = `Search failed: ${err.message}`;
     }
   }
 
