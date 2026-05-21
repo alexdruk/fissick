@@ -1898,25 +1898,11 @@ Autocomplete(
   }
 );
 
-// ── Home zone search autocomplete ───────────────────────────────────────────────
-Autocomplete(
-  'hz-search-input',
-  'hz-search-dropdown',
-  async (q) => {
-    try {
-      const { results } = await window.tt.searchLocation({ query: q });
-      return (results || []).slice(0, 5).map(r => ({
-        label: r.name,
-        sub:   r.displayName,
-        value: r,
-      }));
-    } catch { return []; }
-  },
-  (item) => {
-    // Show the confirmation card directly without requiring Search button click
-    Trips.showConfirmFromResult(item.value);
-  }
-);
+// ── Home zone search autocomplete — disabled (Nominatim rate limit: 1 req/sec)
+// The Search button fires a single request on demand instead.
+// Autocomplete(
+//   'hz-search-input', 'hz-search-dropdown', ...
+// );
 async function init() {
   await refreshLicenceStatus();
   const stats = await window.tt.getStats();

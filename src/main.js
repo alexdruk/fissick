@@ -40,6 +40,7 @@ let activeWorker         = null; // photosWorker
 let isProcessing         = false;
 let activeLocationWorker = null; // locationWorker — spawned reactively from manifest event
 let activeTripsWorker    = null; // tripsWorker — spawned on demand from renderer
+let _lastNominatimReq    = 0;    // timestamp of last Nominatim request (rate-limit guard)
 
 // ── Haversine distance (km) — used by cluster detection ──────────────────────
 function _haversine(lat1, lng1, lat2, lng2) {
@@ -1482,8 +1483,10 @@ ipcMain.handle('trips:geocode-batch', async (_event, { points }) => {
       name    = parsed.name;
       country = parsed.country || null;
     } else {
-      if (rateLimitNeeded) await delay(1150);
-      rateLimitNeeded = true;
+      // Shared Nominatim rate limit with search handler
+      const _now1 = Date.now(), _wait1 = 1100 - (_now1 - _lastNominatimReq);
+      if (_wait1 > 0) await new Promise(r => setTimeout(r, _wait1));
+      _lastNominatimReq = Date.now();
       try {
         // Request English names via accept-language header
         const res = await fetch(
@@ -1579,8 +1582,10 @@ async function _geocodeTripNames(items) {
       countryCode = p.countryCode || null;
       country     = p.country     || null;
     } else {
-      if (!first) await delay(1150);
-      first = false;
+      // Shared Nominatim rate limit with search handler
+      const _now2 = Date.now(), _wait2 = 1100 - (_now2 - _lastNominatimReq);
+      if (_wait2 > 0) await new Promise(r => setTimeout(r, _wait2));
+      _lastNominatimReq = Date.now();
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/reverse?lat=${item.lat}&lon=${item.lng}&format=json&accept-language=en`,
@@ -1676,6 +1681,11 @@ ipcMain.handle('util:show-confirm-dialog', async (_event, { title, message, butt
 // Search a place name via Nominatim (for home zone modal)
 ipcMain.handle('trips:search-location', async (_event, { query }) => {
   if (!query || query.trim().length < 2) return { results: [] };
+  // Respect Nominatim 1 req/sec policy — background geocoding uses the same limit
+  const now = Date.now();
+  const wait = 1100 - (now - _lastNominatimReq);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  _lastNominatimReq = Date.now();
   try {
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&accept-language=en`;
     console.log(`[fossick] searchLocation: ${query}`);
@@ -1684,7 +1694,7 @@ ipcMain.handle('trips:search-location', async (_event, { query }) => {
       signal: AbortSignal.timeout(8000),
     });
     console.log(`[fossick] searchLocation status: ${res.status}`);
-    if (!res.ok) return { results: [] };
+    if (!res.ok) return { results: [], error: `HTTP ${res.status}` };
     const data = await res.json();
     console.log(`[fossick] searchLocation found: ${data.length}`);
     return {
