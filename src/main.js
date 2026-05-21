@@ -987,20 +987,40 @@ ipcMain.handle('util:generate-thumbnails', async () => {
 
     } else if (VIDEO_EXTS.has(ext) && process.platform === 'darwin') {
       try {
+        // First: check if any existing _t.jpg in thumbDir matches this video's basename
+        // (from a previous processing run with a different extraction path)
+        const existingMatch = fs.readdirSync(thumbDir)
+          .find(f => f.endsWith('_t.jpg') && f.includes(path.basename(photo.file_path).replace(/[/\\:]/g, '_')));
+        if (existingMatch) {
+          const existingPath = path.join(thumbDir, existingMatch);
+          if (fs.statSync(existingPath).size > 100) {
+            update.run(existingPath, photo.id);
+            generated++;
+            done++;
+            if (done % 100 === 0 || done === total) {
+              console.log(`[fossick] thumbnails: ${done}/${total} (${generated} generated, ${failed} failed)`);
+              if (!mainWindow.isDestroyed()) mainWindow.webContents.send('util:thumb-progress', { done, total, generated, failed });
+            }
+            return;
+          }
+        }
+
+        // qlmanage won't write to external volumes — use /tmp as staging area
+        const tmpOut = path.join(os.tmpdir(), 'fossick_ql_' + Date.now());
+        fs.mkdirSync(tmpOut, { recursive: true });
         await execFileAsync('qlmanage', [
-          '-t', '-s', '280', '-o', thumbDir, photo.file_path,
+          '-t', '-s', '280', '-o', tmpOut, photo.file_path,
         ], { timeout: 30000 });
-        const qlOut = path.join(thumbDir, path.basename(photo.file_path) + '.png');
-        console.log(`[thumb-ql] looking for: ${qlOut} exists=${fs.existsSync(qlOut)}`);
+        const qlOut = path.join(tmpOut, path.basename(photo.file_path) + '.png');
         if (fs.existsSync(qlOut) && fs.statSync(qlOut).size > 100) {
           fs.renameSync(qlOut, thumbPath);
-          update.run(thumbPath, photo.id); generated++;
+          update.run(thumbPath, photo.id);
+          generated++;
         } else {
-          // List thumbDir to see what qlmanage actually wrote
-          const actual = fs.readdirSync(thumbDir).filter(f => f.includes(path.basename(photo.file_path)));
-          console.log(`[thumb-ql] dir match: ${actual.join(', ') || 'nothing'}`);
+          console.log(`[thumb-ql] no output for ${photo.filename}, tmpOut contents: ${fs.readdirSync(tmpOut).join(', ')}`);
           failed++;
         }
+        try { fs.rmSync(tmpOut, { recursive: true }); } catch {}
       } catch (err) { console.log(`[thumb-ql] ${photo.filename}: ${err.message}`); failed++; }
 
     } else {
