@@ -42,6 +42,88 @@ let activeLocationWorker = null; // locationWorker — spawned reactively from m
 let activeTripsWorker    = null; // tripsWorker — spawned on demand from renderer
 let _lastNominatimReq    = 0;    // timestamp of last Nominatim request (rate-limit guard)
 
+// ── Offline reverse geocoder ──────────────────────────────────────────────────
+// local-reverse-geocoder uses a ~7MB GeoNames cities1000 dataset.
+// Downloaded once on first use, cached in node_modules/local-reverse-geocoder/geonames_dump/
+let _localGeocoder       = null;
+let _localGeocoderReady  = false;
+let _localGeocoderInit   = null;  // Promise — only init once
+
+function _initLocalGeocoder() {
+  if (_localGeocoderInit) return _localGeocoderInit;
+  _localGeocoderInit = new Promise((resolve) => {
+    try {
+      const geocoder = require('local-reverse-geocoder');
+      geocoder.init({ load: { admin1: true, admin2: false, admin3And4: false, alternateNames: false } }, () => {
+        _localGeocoder      = geocoder;
+        _localGeocoderReady = true;
+        console.log('[fossick] local-reverse-geocoder ready');
+        resolve(true);
+      });
+    } catch (err) {
+      console.warn('[fossick] local-reverse-geocoder init failed:', err.message);
+      resolve(false);
+    }
+  });
+  return _localGeocoderInit;
+}
+
+// Reverse geocode a single point offline → { city, country, countryCode }
+function _localReverseGeocode(lat, lng) {
+  return new Promise((resolve) => {
+    if (!_localGeocoderReady || !_localGeocoder) return resolve(null);
+    try {
+      _localGeocoder.lookUp({ latitude: lat, longitude: lng }, 1, (err, results) => {
+        if (err || !results?.[0]?.[0]) return resolve(null);
+        const r = results[0][0];
+        resolve({
+          city:        r.name || '',
+          country:     r.countryName || r.country || '',
+          countryCode: (r.countryCode || '').toUpperCase(),
+        });
+      });
+    } catch { resolve(null); }
+  });
+}
+
+// Forward search via Photon (no rate limit) → array of results
+async function _photonSearch(query) {
+  try {
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lang=en`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Fossick/1.0' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data.features || []).map(f => {
+      const p = f.properties || {};
+      const name = [p.name || p.city || p.county, p.country].filter(Boolean).join(', ');
+      const displayName = [p.name, p.city, p.state, p.country].filter(Boolean).join(', ');
+      return {
+        displayName,
+        name,
+        country:     p.country || null,
+        countryCode: (p.countrycode || '').toUpperCase() || null,
+        lat:         f.geometry?.coordinates?.[1],
+        lng:         f.geometry?.coordinates?.[0],
+      };
+    }).filter(r => r.lat != null && r.lng != null);
+  } catch { return null; }
+}
+
+// Nominatim rate-limited fetch helper
+async function _nominatimFetch(url) {
+  const now  = Date.now();
+  const wait = 1100 - (now - _lastNominatimReq);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  _lastNominatimReq = Date.now();
+  return fetch(url, {
+    headers: { 'User-Agent': 'Fossick/1.0', 'Accept-Language': 'en' },
+    signal: AbortSignal.timeout(8000),
+  });
+}
+
 // ── Haversine distance (km) — used by cluster detection ──────────────────────
 function _haversine(lat1, lng1, lat2, lng2) {
   const R  = 6371;
@@ -249,6 +331,8 @@ app.whenReady().then(() => {
   try { db.exec('ALTER TABLE trips ADD COLUMN country TEXT'); } catch {}
   try { db.exec('ALTER TABLE trips ADD COLUMN distance_km REAL'); } catch {}
   createWindow();
+  // Start local geocoder init in background — it downloads ~7MB on first use
+  _initLocalGeocoder().catch(() => {});
 
   // Intercept window close — show confirmation if processing is active
   mainWindow.on('close', (e) => {
@@ -1470,8 +1554,7 @@ ipcMain.handle('trips:get-all-clusters', () => {
 
 // Reverse geocode a batch of points via Nominatim. Results stream back via events.
 ipcMain.handle('trips:geocode-batch', async (_event, { points }) => {
-  const delay = ms => new Promise(r => setTimeout(r, ms));
-  let rateLimitNeeded = false;
+  await _initLocalGeocoder();
 
   for (const p of points) {
     const key    = `geocode:${parseFloat(p.lat).toFixed(4)}:${parseFloat(p.lng).toFixed(4)}`;
@@ -1483,32 +1566,36 @@ ipcMain.handle('trips:geocode-batch', async (_event, { points }) => {
       name    = parsed.name;
       country = parsed.country || null;
     } else {
-      // Shared Nominatim rate limit with search handler
-      const _now1 = Date.now(), _wait1 = 1100 - (_now1 - _lastNominatimReq);
-      if (_wait1 > 0) await new Promise(r => setTimeout(r, _wait1));
-      _lastNominatimReq = Date.now();
-      try {
-        // Request English names via accept-language header
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${p.lat}&lon=${p.lng}&format=json&accept-language=en`,
-          { headers: { 'User-Agent': 'Fossick/1.0', 'Accept-Language': 'en' }, signal: AbortSignal.timeout(8000) }
-        );
-        if (res.ok) {
-          const data  = await res.json();
-          const addr  = data.address || {};
-          const city  = addr.city || addr.town || addr.village || addr.county || addr.state || '';
-          country     = addr.country || null;
-          name        = [city, country].filter(Boolean).join(', ')
-                        || `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`;
-        } else {
+      // Primary: local reverse geocoder (offline, instant)
+      const local = await _localReverseGeocode(p.lat, p.lng);
+      if (local && local.city) {
+        name    = [local.city, local.country].filter(Boolean).join(', ');
+        country = local.country || null;
+        db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`)
+          .run(key, JSON.stringify({ name, country, countryCode: local.countryCode }));
+      } else {
+        // Fallback: Nominatim
+        try {
+          const res = await _nominatimFetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${p.lat}&lon=${p.lng}&format=json&accept-language=en`
+          );
+          if (res.ok) {
+            const data  = await res.json();
+            const addr  = data.address || {};
+            const city  = addr.city || addr.town || addr.village || addr.county || addr.state || '';
+            country     = addr.country || null;
+            name        = [city, country].filter(Boolean).join(', ')
+                          || `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`;
+          } else {
+            name    = `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`;
+            country = null;
+          }
+          db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`)
+            .run(key, JSON.stringify({ name, country }));
+        } catch {
           name    = `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`;
           country = null;
         }
-        db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`)
-          .run(key, JSON.stringify({ name, country }));
-      } catch {
-        name    = `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`;
-        country = null;
       }
     }
 
@@ -1559,8 +1646,6 @@ ipcMain.handle('trips:compute', async (_event, { homeZones }) => {
 
 // Background geocoding: name, country_code, country, distance_km for each trip.
 async function _geocodeTripNames(items) {
-  const delay = ms => new Promise(r => setTimeout(r, ms));
-
   // Read persisted home zones for distance computation
   const hzRow    = db.prepare(`SELECT value FROM settings WHERE key = 'home_zones'`).get();
   const homeZones = hzRow ? JSON.parse(hzRow.value) : [];
@@ -1569,7 +1654,9 @@ async function _geocodeTripNames(items) {
     `UPDATE trips SET name = ?, country_code = ?, country = ?, distance_km = ? WHERE id = ?`
   );
 
-  let first = true;
+  // Ensure local geocoder is ready (downloads ~7MB on first use, instant after)
+  await _initLocalGeocoder();
+
   for (const item of items) {
     const key    = `geocode:${parseFloat(item.lat).toFixed(4)}:${parseFloat(item.lng).toFixed(4)}`;
     const cached = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key);
@@ -1582,26 +1669,36 @@ async function _geocodeTripNames(items) {
       countryCode = p.countryCode || null;
       country     = p.country     || null;
     } else {
-      // Shared Nominatim rate limit with search handler
-      const _now2 = Date.now(), _wait2 = 1100 - (_now2 - _lastNominatimReq);
-      if (_wait2 > 0) await new Promise(r => setTimeout(r, _wait2));
-      _lastNominatimReq = Date.now();
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${item.lat}&lon=${item.lng}&format=json&accept-language=en`,
-          { headers: { 'User-Agent': 'Fossick/1.0', 'Accept-Language': 'en' }, signal: AbortSignal.timeout(8000) }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const addr  = data.address || {};
-          const city  = addr.city || addr.town || addr.village || addr.county || addr.state || '';
-          country     = addr.country || null;
-          countryCode = (data.address?.country_code || '').toUpperCase() || null;
-          name        = [city, country].filter(Boolean).join(', ') || null;
-        }
-        if (name) db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`)
+      // Primary: local reverse geocoder (offline, instant, no rate limit)
+      const local = await _localReverseGeocode(item.lat, item.lng);
+      if (local && local.city) {
+        country     = local.country     || null;
+        countryCode = local.countryCode || null;
+        name        = [local.city, local.country].filter(Boolean).join(', ');
+        db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`)
           .run(key, JSON.stringify({ name, country, countryCode }));
-      } catch {}
+        console.log(`[fossick] geocoded (local): ${name}`);
+      } else {
+        // Fallback: Nominatim (rate-limited)
+        try {
+          const res = await _nominatimFetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${item.lat}&lon=${item.lng}&format=json&accept-language=en`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const addr  = data.address || {};
+            const city  = addr.city || addr.town || addr.village || addr.county || addr.state || '';
+            country     = addr.country || null;
+            countryCode = (data.address?.country_code || '').toUpperCase() || null;
+            name        = [city, country].filter(Boolean).join(', ') || null;
+          }
+          if (name) db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`)
+            .run(key, JSON.stringify({ name, country, countryCode }));
+          if (name) console.log(`[fossick] geocoded (nominatim): ${name}`);
+        } catch (err) {
+          console.warn(`[fossick] geocode failed for ${item.lat},${item.lng}: ${err.message}`);
+        }
+      }
     }
 
     // Distance from nearest home zone
@@ -1681,22 +1778,26 @@ ipcMain.handle('util:show-confirm-dialog', async (_event, { title, message, butt
 // Search a place name via Nominatim (for home zone modal)
 ipcMain.handle('trips:search-location', async (_event, { query }) => {
   if (!query || query.trim().length < 2) return { results: [] };
-  // Respect Nominatim 1 req/sec policy — background geocoding uses the same limit
-  const now = Date.now();
-  const wait = 1100 - (now - _lastNominatimReq);
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
-  _lastNominatimReq = Date.now();
+  console.log(`[fossick] searchLocation: "${query}"`);
+
+  // Primary: Photon (no rate limit, no API key)
+  const photonResults = await _photonSearch(query);
+  if (photonResults && photonResults.length > 0) {
+    console.log(`[fossick] searchLocation via Photon: ${photonResults.length} results`);
+    return { results: photonResults, source: 'photon' };
+  }
+
+  // Fallback: Nominatim (rate-limited)
+  console.log('[fossick] searchLocation: Photon failed, trying Nominatim…');
   try {
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&accept-language=en`;
-    console.log(`[fossick] searchLocation: ${query}`);
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Fossick/1.0', 'Accept-Language': 'en' },
-      signal: AbortSignal.timeout(8000),
-    });
-    console.log(`[fossick] searchLocation status: ${res.status}`);
-    if (!res.ok) return { results: [], error: `HTTP ${res.status}` };
+    const res = await _nominatimFetch(url);
+    if (!res.ok) {
+      console.error(`[fossick] searchLocation Nominatim status: ${res.status}`);
+      return { results: [], error: `Search unavailable (HTTP ${res.status})` };
+    }
     const data = await res.json();
-    console.log(`[fossick] searchLocation found: ${data.length}`);
+    console.log(`[fossick] searchLocation via Nominatim: ${data.length} results`);
     return {
       results: data.map(r => ({
         displayName: r.display_name,
@@ -1707,10 +1808,11 @@ ipcMain.handle('trips:search-location', async (_event, { query }) => {
         lat:         parseFloat(r.lat),
         lng:         parseFloat(r.lon),
       })),
+      source: 'nominatim',
     };
   } catch (err) {
     console.error(`[fossick] searchLocation error: ${err.message}`);
-    return { results: [], error: err.message };
+    return { results: [], error: 'Search service unavailable. Check your internet connection.' };
   }
 });
 
