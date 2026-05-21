@@ -1485,8 +1485,6 @@ const Trips = (() => {
     });
     const sortSel = document.getElementById('trips-sort-select');
     if (sortSel) sortSel.value = _currentSort;
-    const countEl = document.getElementById('trips-list-count');
-    if (countEl) countEl.textContent = `${total.toLocaleString()} trip${total !== 1 ? 's' : ''}`;
     _allTrips = trips;
     _renderFilteredCards();
     if (state.trips.unsubName) state.trips.unsubName();
@@ -1513,6 +1511,15 @@ const Trips = (() => {
               || year.includes(q);
         })
       : _allTrips;
+
+    // Update count to reflect current filter
+    const countEl = document.getElementById('trips-list-count');
+    if (countEl) {
+      const n = filtered.length;
+      countEl.textContent = q
+        ? `${n} of ${_allTrips.length} trip${_allTrips.length !== 1 ? 's' : ''}`
+        : `${_allTrips.length.toLocaleString()} trip${_allTrips.length !== 1 ? 's' : ''}`;
+    }
 
     if (filtered.length === 0 && q) {
       const msg = document.createElement('div');
