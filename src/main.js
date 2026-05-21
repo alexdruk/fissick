@@ -922,7 +922,10 @@ ipcMain.handle('util:heic-to-jpeg', async (_event, { filePath }) => {
 
 // ── Generate thumbnails (post-processing pass) ────────────────────────────────
 ipcMain.handle('util:generate-thumbnails', async () => {
+  try {
+  console.log('[fossick] generate-thumbnails: handler called');
   const thumbDir = ensureThumbDir();
+  console.log(`[fossick] thumbDir: ${thumbDir}`);
   fs.mkdirSync(thumbDir, { recursive: true });
   const { execFile } = require('child_process');
   const { promisify } = require('util');
@@ -931,21 +934,26 @@ ipcMain.handle('util:generate-thumbnails', async () => {
   let sharp = null;
   try { sharp = require('sharp'); } catch {}
 
-  // Reset stale entries — thumbnail_path recorded but file missing on disk
+  // Reset stale entries in batches to avoid blocking main thread
   const staleRows = db.prepare(
     `SELECT id, thumbnail_path FROM photos WHERE thumbnail_path IS NOT NULL`
   ).all();
   const resetThumb = db.prepare(`UPDATE photos SET thumbnail_path = NULL WHERE id = ?`);
   let resetCount = 0;
-  for (const row of staleRows) {
-    try { if (!fs.existsSync(row.thumbnail_path)) { resetThumb.run(row.id); resetCount++; } }
-    catch { resetThumb.run(row.id); resetCount++; }
-  }
-  if (resetCount > 0) console.log(`[fossick] thumbnails: reset ${resetCount} stale entries`);
+  const resetMany = db.transaction((rows) => {
+    for (const row of rows) {
+      let missing = false;
+      try { missing = !fs.existsSync(row.thumbnail_path); } catch { missing = true; }
+      if (missing) { resetThumb.run(row.id); resetCount++; }
+    }
+  });
+  resetMany(staleRows);
+  console.log(`[fossick] thumbnails: reset ${resetCount} stale, checking remaining`);
 
   const photos = db.prepare(
     `SELECT id, file_path, filename FROM photos WHERE thumbnail_path IS NULL`
   ).all();
+  console.log(`[fossick] thumbnails: ${photos.length} photos to process`);
 
   const total = photos.length;
   let done = 0, generated = 0, failed = 0;
@@ -1053,6 +1061,10 @@ ipcMain.handle('util:generate-thumbnails', async () => {
   }
 
   return { done, total, generated, failed };
+  } catch (err) {
+    console.error('[fossick] generate-thumbnails ERROR:', err.message, err.stack);
+    return { done: 0, total: 0, generated: 0, failed: 0, error: err.message };
+  }
 });
 
 // Returns distinct file extensions present in the photos table for the ext filter dropdown
