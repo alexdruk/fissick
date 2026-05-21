@@ -1494,6 +1494,13 @@ const Trips = (() => {
     _allTrips = trips;
     window._allTripsForAc = trips;
     _renderFilteredCards();
+
+    // Auto-fix any trips still showing fallback "Trip Month Year" names
+    const fallbackCount = trips.filter(t => /^Trip [A-Z]/.test(t.name || '')).length;
+    if (fallbackCount > 0) {
+      console.log(`[fossick] ${fallbackCount} trips with fallback names — triggering re-geocode…`);
+      window.tt.fixFallbackNames().catch(() => {});
+    }
     if (state.trips.unsubName) state.trips.unsubName();
     state.trips.unsubName = window.tt.onTripNameUpdate(({ tripId, name, countryCode }) => {
       const card = document.querySelector(`.trip-card[data-trip-id="${tripId}"]`);

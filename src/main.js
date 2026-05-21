@@ -1700,6 +1700,21 @@ ipcMain.handle('trips:search-location', async (_event, { query }) => {
   }
 });
 
+// Re-geocode any trips still showing fallback "Trip Month Year" names.
+// Called automatically on startup if fallback names are detected.
+ipcMain.handle('trips:fix-fallback-names', async () => {
+  const fallbacks = db.prepare(
+    `SELECT id AS tripId, center_lat AS lat, center_lng AS lng FROM trips
+     WHERE name LIKE 'Trip %' OR name IS NULL`
+  ).all();
+  if (!fallbacks.length) return { count: 0 };
+  console.log(`[fossick] Re-geocoding ${fallbacks.length} trips with fallback names…`);
+  _geocodeTripNames(fallbacks).catch(err =>
+    console.error('[fossick] fix-fallback-names error:', err.message)
+  );
+  return { count: fallbacks.length };
+});
+
 ipcMain.handle('settings:get-working-folder', () => {
   const wf = getWorkingFolder();
   const dbPath = getDbPath();
