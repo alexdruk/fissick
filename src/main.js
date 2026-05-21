@@ -247,14 +247,6 @@ app.whenReady().then(() => {
   try { db.exec('ALTER TABLE trips ADD COLUMN country_code TEXT'); } catch {}
   try { db.exec('ALTER TABLE trips ADD COLUMN country TEXT'); } catch {}
   try { db.exec('ALTER TABLE trips ADD COLUMN distance_km REAL'); } catch {}
-  // Clear cached geocode results that may have non-English names (one-time migration)
-  try {
-    const migDone = db.prepare(`SELECT value FROM settings WHERE key = 'geocode_en_migrated'`).get();
-    if (!migDone) {
-      db.prepare(`DELETE FROM settings WHERE key LIKE 'geocode:%'`).run();
-      db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`).run('geocode_en_migrated', '1');
-    }
-  } catch {}
   createWindow();
 
   // Intercept window close — show confirmation if processing is active

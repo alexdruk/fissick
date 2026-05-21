@@ -1407,6 +1407,7 @@ const Trips = (() => {
         });
         // Hook for autocomplete to trigger filter with selected value
         window._tripsSearchTrigger = (val) => {
+          if (!_allTrips.length) return;
           _searchQuery = val.toLowerCase();
           _renderFilteredCards();
         };
@@ -1506,7 +1507,7 @@ const Trips = (() => {
 
   function _renderFilteredCards() {
     const list = document.getElementById('trips-list');
-    if (!list) return;
+    if (!list || !_allTrips.length) return;
     [...list.querySelectorAll('.trip-card, .trips-no-results')].forEach(el => el.remove());
 
     const q = _searchQuery;
