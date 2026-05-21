@@ -142,8 +142,8 @@ function run() {
   post({ type: 'trips-status', phase: 'writing',
          message: `${qualifying.length} trips found. Writing to database…` });
 
-  db.exec('DELETE FROM trips');
   db.prepare('UPDATE photos SET trip_id = NULL').run();
+  db.exec('DELETE FROM trips');
 
   const insertTrip = db.prepare(`
     INSERT INTO trips (name, start_ts, end_ts, center_lat, center_lng, photo_count, point_count)

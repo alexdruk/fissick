@@ -1998,6 +1998,10 @@ document.getElementById('btn-trips-back').addEventListener('click', () => Trips.
       _hzClusters = clusters;
       _renderHzClusters(clusters);
 
+      // If clusters already have cached country data, render grouped list immediately
+      const hasCachedCountry = clusters.some(c => c.country);
+      if (hasCachedCountry) _renderGroupedList();
+
       if (_geocodeUnsub) _geocodeUnsub();
       _geocodeExpected = clusters.length;
       _geocodeReceived = 0;

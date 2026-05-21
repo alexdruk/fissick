@@ -1417,10 +1417,18 @@ ipcMain.handle('trips:get-clusters', () => {
   merged.sort((a, b) => b.cnt - a.cnt);
 
   // Return ALL clusters — the renderer groups by country and shows top-10 per country.
-  // No hard cap here; grouping/limiting happens in the modal UI.
   const allClusters = merged
     .filter(c => c.cnt >= 10)
-    .map((c, i) => ({ index: i, lat: c.clat, lng: c.clng, count: c.cnt, name: null }));
+    .map((c, i) => {
+      // Check settings cache for previously-geocoded country data
+      const key    = `geocode:${c.clat.toFixed(4)}:${c.clng.toFixed(4)}`;
+      const cached = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key);
+      let name = null, country = null;
+      if (cached) {
+        try { const p = JSON.parse(cached.value); name = p.name; country = p.country || null; } catch {}
+      }
+      return { index: i, lat: c.clat, lng: c.clng, count: c.cnt, name, country };
+    });
 
   return { clusters: allClusters, hasMore: false, total: allClusters.length };
 });

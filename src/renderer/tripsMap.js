@@ -86,7 +86,7 @@ const TripDetailMap = (() => {
         `<div class="tdm-popup-name">${_esc(ph.filename)}</div>` +
         (dateStr ? `<div class="tdm-popup-date">${dateStr}</div>` : '') +
         `</div>`,
-        { maxWidth: 250, className: 'tdm-popup-wrap' }
+        { maxWidth: 260, className: 'tdm-popup-wrap' }
       );
 
       // Click on popup image → open lightbox
