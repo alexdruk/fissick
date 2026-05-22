@@ -1166,6 +1166,9 @@ async function openLightbox(photo) {
   const lbInfo   = document.getElementById('lightbox-info');
   if (!lb) return;
 
+  // Move to body to escape any stacking context from overflow:hidden parents
+  if (lb.parentNode !== document.body) document.body.appendChild(lb);
+
   const ext = (photo.filename.split('.').pop() || '').toLowerCase();
   const isVideo = VIDEO_EXTS_LB.includes(ext);
 
