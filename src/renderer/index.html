@@ -873,9 +873,9 @@ html, body {
 #places-list {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 .places-list-header {
   display: flex;
@@ -888,14 +888,18 @@ html, body {
 }
 .places-list-count { font-family: var(--mono); font-size: 10px; color: var(--dim); }
 
+/* Scroll happens on this wrapper, not on the grid itself.
+   Same pattern as albums: unconstrained grid height, parent scrolls. */
+#places-grid-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 .places-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 14px;
   padding: 20px;
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
 }
 
 .place-card {
@@ -1784,7 +1788,9 @@ html, body {
               </select>
             </div>
           </div>
-          <div id="places-grid" class="places-grid"></div>
+          <div id="places-grid-scroll">
+            <div id="places-grid" class="places-grid"></div>
+          </div>
         </div>
 
         <!-- Place detail -->

@@ -1605,19 +1605,17 @@ ipcMain.handle('places:compute', async () => {
   }
 
   // ── Source B: GPS photo clusters (fallback when no Timeline data) ────────────
-  // Grid cell: 0.01 degree (~1km). Minimum 3 photos per cell to qualify.
-  // Reverse-geocode each centroid with local-reverse-geocoder for a place name.
-  const GRID    = 0.01;
-  const MIN_PH  = 3;
+  // Grid: 0.1° (~11km) — one cell per city for most places.
+  // Min 5 photos. JS Map dedup by name, plus SQL post-dedup as safety net.
+  const GRID   = 0.1;
+  const MIN_PH = 5;
 
   const clusters = db.prepare(`
     SELECT
-      ROUND(lat / ${GRID}) * ${GRID}  AS glat,
-      ROUND(lng / ${GRID}) * ${GRID}  AS glng,
-      COUNT(*)                         AS photo_count,
-      AVG(lat)                         AS lat,
-      AVG(lng)                         AS lng,
-      MIN(id)                          AS cover_id
+      COUNT(*)   AS photo_count,
+      AVG(lat)   AS lat,
+      AVG(lng)   AS lng,
+      MIN(id)    AS cover_id
     FROM photos
     WHERE lat IS NOT NULL AND lng IS NOT NULL
     GROUP BY ROUND(lat / ${GRID}), ROUND(lng / ${GRID})
@@ -1625,14 +1623,73 @@ ipcMain.handle('places:compute', async () => {
     ORDER BY COUNT(*) DESC
   `).all();
 
-  let inserted = 0;
+  // Geocode and accumulate by name — merges clusters that resolve to the same city.
+  const byName = new Map();
   for (const cluster of clusters) {
     const geo  = await _localReverseGeocode(cluster.lat, cluster.lng);
-    const name = geo ? (geo.city ? `${geo.city}, ${geo.country}` : geo.country) : `${cluster.lat.toFixed(2)}, ${cluster.lng.toFixed(2)}`;
-    const placeId = stmtInsert.run(name, cluster.lat, cluster.lng, 0).lastInsertRowid;
-    const nearby  = stmtPhotos.all(cluster.lat - RADIUS, cluster.lat + RADIUS, cluster.lng - RADIUS, cluster.lng + RADIUS);
-    stmtUpdatePlace.run(nearby.length || cluster.photo_count, nearby[0]?.id ?? cluster.cover_id, geo?.countryCode ?? null, geo?.country ?? null, placeId);
+    const name = geo
+      ? (geo.city ? `${geo.city}, ${geo.country}` : geo.country)
+      : `${cluster.lat.toFixed(1)}°, ${cluster.lng.toFixed(1)}°`;
+
+    if (byName.has(name)) {
+      const ex = byName.get(name);
+      if (cluster.photo_count > ex.photo_count) {
+        byName.set(name, { lat: cluster.lat, lng: cluster.lng,
+          photo_count: ex.photo_count + cluster.photo_count,
+          cover_id: cluster.cover_id, geo });
+      } else {
+        ex.photo_count += cluster.photo_count;
+      }
+    } else {
+      byName.set(name, { lat: cluster.lat, lng: cluster.lng,
+        photo_count: cluster.photo_count, cover_id: cluster.cover_id, geo });
+    }
+  }
+
+  // Count photos precisely — separate COUNT query, not capped by LIMIT
+  const stmtPhotoCount = db.prepare(`
+    SELECT COUNT(*) as n FROM photos
+    WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?
+      AND lat IS NOT NULL AND lng IS NOT NULL
+  `);
+
+  // Insert merged places
+  let inserted = 0;
+  for (const [name, place] of byName) {
+    const placeId    = stmtInsert.run(name, place.lat, place.lng, 0).lastInsertRowid;
+    const nearby     = stmtPhotos.all(
+      place.lat - RADIUS, place.lat + RADIUS,
+      place.lng - RADIUS, place.lng + RADIUS
+    );
+    const exactCount = stmtPhotoCount.get(
+      place.lat - RADIUS, place.lat + RADIUS,
+      place.lng - RADIUS, place.lng + RADIUS
+    ).n;
+    stmtUpdatePlace.run(
+      exactCount || place.photo_count,
+      nearby[0]?.id ?? place.cover_id,
+      place.geo?.countryCode ?? null,
+      place.geo?.country     ?? null,
+      placeId
+    );
     inserted++;
+  }
+
+  // SQL post-dedup: catch any remaining exact-name duplicates
+  // (geocoder returned slightly different results for adjacent clusters)
+  const dupeNames = db.prepare(
+    `SELECT name FROM places GROUP BY name HAVING COUNT(*) > 1`
+  ).all();
+  for (const { name } of dupeNames) {
+    const rows = db.prepare(
+      `SELECT id, photo_count FROM places WHERE name = ? ORDER BY photo_count DESC`
+    ).all(name);
+    const winner     = rows[0];
+    const totalCount = rows.reduce((s, r) => s + r.photo_count, 0);
+    db.prepare(`UPDATE places SET photo_count = ? WHERE id = ?`).run(totalCount, winner.id);
+    const loserIds   = rows.slice(1).map(r => r.id);
+    db.prepare(`DELETE FROM places WHERE id IN (${loserIds.map(() => '?').join(',')})`).run(...loserIds);
+    inserted -= loserIds.length;
   }
 
   return { ok: true, total: inserted, source: 'gps_clusters' };
