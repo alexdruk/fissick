@@ -82,7 +82,9 @@ function _localReverseGeocode(lat, lng) {
         const countryCode = (r.countryCode || '').toUpperCase();
         const country     = _ISO[countryCode] || countryCode || '';
         resolve({
-          city: r.name || '',
+          city:        r.name         || '',
+          admin2:      r.adminName2   || '',  // department/county level
+          admin1:      r.adminName1   || '',  // region/state level
           country,
           countryCode,
         });
@@ -358,6 +360,10 @@ app.whenReady().then(() => {
       name           TEXT NOT NULL,
       lat            REAL NOT NULL,
       lng            REAL NOT NULL,
+      lat_min        REAL,
+      lat_max        REAL,
+      lng_min        REAL,
+      lng_max        REAL,
       visit_count    INTEGER DEFAULT 0,
       photo_count    INTEGER DEFAULT 0,
       cover_photo_id INTEGER REFERENCES photos(id),
@@ -366,6 +372,11 @@ app.whenReady().then(() => {
     );
     CREATE INDEX IF NOT EXISTS idx_places_lat_lng ON places(lat, lng);
   `);
+  // Bbox column migrations (safe on existing DBs)
+  try { db.exec('ALTER TABLE places ADD COLUMN lat_min REAL'); } catch {}
+  try { db.exec('ALTER TABLE places ADD COLUMN lat_max REAL'); } catch {}
+  try { db.exec('ALTER TABLE places ADD COLUMN lng_min REAL'); } catch {}
+  try { db.exec('ALTER TABLE places ADD COLUMN lng_max REAL'); } catch {}
   createWindow();
   // Start local geocoder init in background — it downloads ~7MB on first use
   _initLocalGeocoder().catch(() => {});
@@ -1582,7 +1593,7 @@ ipcMain.handle('places:compute', async () => {
     UPDATE places SET photo_count = ?, cover_photo_id = ?, country_code = ?, country = ? WHERE id = ?
   `);
 
-  const RADIUS = 0.005; // ~500m bounding box
+  const RADIUS = 0.09;  // ~10km bounding box — matches grid cell size
 
   // ── Source A: named Timeline visits ─────────────────────────────────────────
   if (visitCount > 0) {
@@ -1605,17 +1616,25 @@ ipcMain.handle('places:compute', async () => {
   }
 
   // ── Source B: GPS photo clusters (fallback when no Timeline data) ────────────
-  // Grid: 0.1° (~11km) — one cell per city for most places.
-  // Min 5 photos. JS Map dedup by name, plus SQL post-dedup as safety net.
+  // Grid: 0.1° (~11km). Min 5 photos per cell.
+  // Each cluster stores its exact bounding box (grid cell extents).
+  // Photo queries use the bbox — no radius overlap between adjacent places.
+  // Adjacent cells that geocode to the same city name are merged: bbox is
+  // unioned so the merged place's photo query still returns all photos.
   const GRID   = 0.1;
   const MIN_PH = 5;
+  const HALF   = GRID / 2;
 
   const clusters = db.prepare(`
     SELECT
-      COUNT(*)   AS photo_count,
-      AVG(lat)   AS lat,
-      AVG(lng)   AS lng,
-      MIN(id)    AS cover_id
+      COUNT(*)                            AS photo_count,
+      AVG(lat)                            AS lat,
+      AVG(lng)                            AS lng,
+      MIN(id)                             AS cover_id,
+      ROUND(lat / ${GRID}) * ${GRID} - ${HALF} AS lat_min,
+      ROUND(lat / ${GRID}) * ${GRID} + ${HALF} AS lat_max,
+      ROUND(lng / ${GRID}) * ${GRID} - ${HALF} AS lng_min,
+      ROUND(lng / ${GRID}) * ${GRID} + ${HALF} AS lng_max
     FROM photos
     WHERE lat IS NOT NULL AND lng IS NOT NULL
     GROUP BY ROUND(lat / ${GRID}), ROUND(lng / ${GRID})
@@ -1624,72 +1643,91 @@ ipcMain.handle('places:compute', async () => {
   `).all();
 
   // Geocode and accumulate by name — merges clusters that resolve to the same city.
+  // Bbox is unioned so merged places still query all their photos.
   const byName = new Map();
   for (const cluster of clusters) {
     const geo  = await _localReverseGeocode(cluster.lat, cluster.lng);
-    const name = geo
-      ? (geo.city ? `${geo.city}, ${geo.country}` : geo.country)
-      : `${cluster.lat.toFixed(1)}°, ${cluster.lng.toFixed(1)}°`;
+    // Use admin2 (department/county) when city name looks like a sub-district:
+    // heuristic — city contains digits (arrondissement numbers) or is longer
+    // than 30 chars (usually a very specific locality, not a real city name).
+    // This collapses "Paris 03 Temple", "Paris 05 Panthéon" → "Paris".
+    let name;
+    if (!geo) {
+      name = `${cluster.lat.toFixed(1)}°, ${cluster.lng.toFixed(1)}°`;
+    } else {
+      const city = geo.city || '';
+      const isSubDistrict = /\d/.test(city) || city.length > 30;
+      const bestCity = (isSubDistrict && geo.admin2) ? geo.admin2 : (city || geo.admin2 || geo.admin1 || '');
+      name = bestCity ? `${bestCity}, ${geo.country}` : geo.country;
+    }
 
     if (byName.has(name)) {
       const ex = byName.get(name);
-      if (cluster.photo_count > ex.photo_count) {
-        byName.set(name, { lat: cluster.lat, lng: cluster.lng,
-          photo_count: ex.photo_count + cluster.photo_count,
-          cover_id: cluster.cover_id, geo });
-      } else {
-        ex.photo_count += cluster.photo_count;
+      ex.photo_count += cluster.photo_count;
+      // Union the bounding boxes
+      ex.lat_min = Math.min(ex.lat_min, cluster.lat_min);
+      ex.lat_max = Math.max(ex.lat_max, cluster.lat_max);
+      ex.lng_min = Math.min(ex.lng_min, cluster.lng_min);
+      ex.lng_max = Math.max(ex.lng_max, cluster.lng_max);
+      // Use largest cluster's centroid and cover
+      if (cluster.photo_count > ex.primary_count) {
+        ex.lat = cluster.lat; ex.lng = cluster.lng;
+        ex.cover_id = cluster.cover_id;
+        ex.primary_count = cluster.photo_count;
+        ex.geo = geo;
       }
     } else {
-      byName.set(name, { lat: cluster.lat, lng: cluster.lng,
-        photo_count: cluster.photo_count, cover_id: cluster.cover_id, geo });
+      byName.set(name, {
+        lat: cluster.lat, lng: cluster.lng,
+        lat_min: cluster.lat_min, lat_max: cluster.lat_max,
+        lng_min: cluster.lng_min, lng_max: cluster.lng_max,
+        photo_count: cluster.photo_count,
+        primary_count: cluster.photo_count,
+        cover_id: cluster.cover_id, geo,
+      });
     }
   }
 
-  // Count photos precisely — separate COUNT query, not capped by LIMIT
-  const stmtPhotoCount = db.prepare(`
+  // Updated INSERT to include bbox columns
+  const stmtInsertBbox = db.prepare(`
+    INSERT INTO places (name, lat, lng, lat_min, lat_max, lng_min, lng_max,
+                        visit_count, photo_count, cover_photo_id, country_code, country)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, NULL)
+  `);
+  const stmtUpdateBbox = db.prepare(`
+    UPDATE places SET photo_count = ?, cover_photo_id = ?, country_code = ?, country = ? WHERE id = ?
+  `);
+
+  // Exact bbox photo query — no radius, no overlap
+  const stmtBboxPhotos = db.prepare(`
+    SELECT id, thumbnail_path, file_path, date_ts
+    FROM photos
+    WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?
+      AND lat IS NOT NULL AND lng IS NOT NULL
+    ORDER BY date_ts ASC LIMIT 200
+  `);
+  const stmtBboxCount = db.prepare(`
     SELECT COUNT(*) as n FROM photos
     WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?
       AND lat IS NOT NULL AND lng IS NOT NULL
   `);
 
-  // Insert merged places
   let inserted = 0;
   for (const [name, place] of byName) {
-    const placeId    = stmtInsert.run(name, place.lat, place.lng, 0).lastInsertRowid;
-    const nearby     = stmtPhotos.all(
-      place.lat - RADIUS, place.lat + RADIUS,
-      place.lng - RADIUS, place.lng + RADIUS
-    );
-    const exactCount = stmtPhotoCount.get(
-      place.lat - RADIUS, place.lat + RADIUS,
-      place.lng - RADIUS, place.lng + RADIUS
-    ).n;
-    stmtUpdatePlace.run(
-      exactCount || place.photo_count,
+    const placeId    = stmtInsertBbox.run(
+      name, place.lat, place.lng,
+      place.lat_min, place.lat_max, place.lng_min, place.lng_max
+    ).lastInsertRowid;
+    const nearby     = stmtBboxPhotos.all(place.lat_min, place.lat_max, place.lng_min, place.lng_max);
+    const exactCount = stmtBboxCount.get(place.lat_min, place.lat_max, place.lng_min, place.lng_max).n;
+    stmtUpdateBbox.run(
+      exactCount,
       nearby[0]?.id ?? place.cover_id,
       place.geo?.countryCode ?? null,
       place.geo?.country     ?? null,
       placeId
     );
     inserted++;
-  }
-
-  // SQL post-dedup: catch any remaining exact-name duplicates
-  // (geocoder returned slightly different results for adjacent clusters)
-  const dupeNames = db.prepare(
-    `SELECT name FROM places GROUP BY name HAVING COUNT(*) > 1`
-  ).all();
-  for (const { name } of dupeNames) {
-    const rows = db.prepare(
-      `SELECT id, photo_count FROM places WHERE name = ? ORDER BY photo_count DESC`
-    ).all(name);
-    const winner     = rows[0];
-    const totalCount = rows.reduce((s, r) => s + r.photo_count, 0);
-    db.prepare(`UPDATE places SET photo_count = ? WHERE id = ?`).run(totalCount, winner.id);
-    const loserIds   = rows.slice(1).map(r => r.id);
-    db.prepare(`DELETE FROM places WHERE id IN (${loserIds.map(() => '?').join(',')})`).run(...loserIds);
-    inserted -= loserIds.length;
   }
 
   return { ok: true, total: inserted, source: 'gps_clusters' };
@@ -1716,9 +1754,17 @@ ipcMain.handle('db:get-places', (_event, { sort = 'visits-desc' } = {}) => {
   `).all();
 });
 
-ipcMain.handle('db:get-place-detail', (_event, { placeId, radius = 0.005 } = {}) => {
+ipcMain.handle('db:get-place-detail', (_event, { placeId } = {}) => {
   const place = db.prepare(`SELECT * FROM places WHERE id = ?`).get(placeId);
   if (!place) return null;
+
+  // Use stored bbox (exact cluster membership) if available.
+  // Fall back to 0.09° radius for Timeline-visit places which have no bbox.
+  const FALLBACK = 0.09;
+  const lat_min = place.lat_min ?? (place.lat - FALLBACK);
+  const lat_max = place.lat_max ?? (place.lat + FALLBACK);
+  const lng_min = place.lng_min ?? (place.lng - FALLBACK);
+  const lng_max = place.lng_max ?? (place.lng + FALLBACK);
 
   const photos = db.prepare(`
     SELECT id, file_path, filename, thumbnail_path, date_ts, lat, lng
@@ -1728,10 +1774,7 @@ ipcMain.handle('db:get-place-detail', (_event, { placeId, radius = 0.005 } = {})
       AND lat IS NOT NULL AND lng IS NOT NULL
     ORDER BY date_ts ASC
     LIMIT 200
-  `).all(
-    place.lat - radius, place.lat + radius,
-    place.lng - radius, place.lng + radius
-  );
+  `).all(lat_min, lat_max, lng_min, lng_max);
 
   return { place, photos };
 });

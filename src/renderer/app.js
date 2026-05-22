@@ -1675,8 +1675,9 @@ const Places = (() => {
   return { onTabActivated, computePlaces, applySort, reset };
 })();
 
-// Places: compute button
+// Places: compute + recompute buttons
 document.getElementById('btn-compute-places')?.addEventListener('click', () => Places.computePlaces());
+document.getElementById('btn-recompute-places')?.addEventListener('click', () => Places.computePlaces());
 
 // Places: back button
 document.getElementById('btn-places-back')?.addEventListener('click', async () => {
