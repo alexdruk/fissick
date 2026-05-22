@@ -53,31 +53,30 @@ function extractWithSystemUnzip(zipPath, destDir, onDone) {
   return new Promise((resolve) => {
     const useDitto = process.platform === 'darwin';
 
-    const done = () => {
-      let count = 0;
-      const countFiles = (dir) => {
-        try {
-          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            if (entry.isDirectory()) countFiles(path.join(dir, entry.name));
-            else count++;
-          }
-        } catch {}
-      };
-      countFiles(destDir);
-      console.log(`[zipExtractor] ${path.basename(zipPath)}: extracted ${count} files.`);
-      onDone(count);
+    // Track entry count from unzip stdout (-v flag) or accept an estimate.
+    // We no longer recursively re-scan destDir after each ZIP — that was O(n²)
+    // on multi-part archives. Progress is best-effort for display only.
+    let zipEntryCount = 0;
+    const done = (count) => {
+      zipEntryCount = count || zipEntryCount;
+      console.log(`[zipExtractor] ${path.basename(zipPath)}: ~${zipEntryCount} entries extracted.`);
+      onDone(zipEntryCount);
       resolve(); // always resolve — never reject, never stop the queue
     };
 
     if (useDitto) {
-      execFile('/usr/bin/ditto', ['-xk', zipPath, destDir], (err, stdout, stderr) => {
-        if (err) console.warn(`[zipExtractor] ditto warning on ${path.basename(zipPath)}:`, stderr || err.message);
-        done();
+      // ditto doesn't report counts — run a quick top-level count via unzip -Z1
+      execFile('/usr/bin/unzip', ['-Z1', zipPath], (e, stdout) => {
+        const estimate = stdout ? stdout.trim().split('\n').length : 0;
+        execFile('/usr/bin/ditto', ['-xk', zipPath, destDir], (err, _out, stderr) => {
+          if (err) console.warn(`[zipExtractor] ditto warning on ${path.basename(zipPath)}:`, stderr || err.message);
+          done(estimate);
+        });
       });
     } else {
       execFile('unzip', ['-o', '-q', zipPath, '-d', destDir], (err, stdout, stderr) => {
         if (err && err.code > 1) console.warn(`[zipExtractor] unzip warning on ${path.basename(zipPath)}:`, stderr || err.message);
-        done();
+        done(0);
       });
     }
   });
@@ -110,7 +109,14 @@ async function extractWithUnzipper(zipPath, destDir, onEntry) {
         return;
       }
 
-      const destPath = path.join(destDir, entryPath);
+      // ZIP Slip guard: reject any entry that would escape the destination dir
+      const destPath = path.resolve(destDir, entryPath);
+      if (!destPath.startsWith(path.resolve(destDir) + path.sep) &&
+          destPath !== path.resolve(destDir)) {
+        console.warn(`[zipExtractor] ZIP Slip rejected: ${entryPath}`);
+        entry.autodrain();
+        return;
+      }
 
       if (type === 'Directory') {
         fs.mkdirSync(destPath, { recursive: true });

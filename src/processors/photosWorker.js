@@ -62,7 +62,7 @@ function detectOptimalConcurrency(workPath) {
     console.log('[fossick] Detected likely HDD path — using reduced concurrency (3) to avoid seek thrashing');
     return 3;
   }
-  const full = Math.max(8, cpus);
+  const full = Math.min(8, cpus);  // cap at 8, never oversubscribe
   console.log(`[fossick] Using ${full} concurrent ExifTool processes`);
   return full;
 }

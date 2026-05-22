@@ -37,9 +37,16 @@ function toDateStr(ts) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
 }
 
-// Number of calendar days between two YYYY-MM-DD strings
+// Number of calendar days between two YYYY-MM-DD strings.
+// Explicit UTC parsing — new Date('YYYY-MM-DD') is treated as UTC by spec
+// but behaviour across runtimes/timezones has historically been inconsistent.
+// Splitting and using Date.UTC is unambiguous.
+function parseDateStrUTC(s) {
+  const [y, m, d] = s.split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+}
 function calDayGap(dateA, dateB) {
-  return Math.round((new Date(dateB) - new Date(dateA)) / 86400000);
+  return Math.round((parseDateStrUTC(dateB) - parseDateStrUTC(dateA)) / 86400000);
 }
 
 function fallbackName(ts) {
