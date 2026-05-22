@@ -1495,10 +1495,15 @@ const Trips = (() => {
     window._allTripsForAc = trips;
     _renderFilteredCards();
 
-    // Auto-fix any trips still showing fallback "Trip Month Year" names
-    const fallbackCount = trips.filter(t => /^Trip [A-Z]/.test(t.name || '')).length;
+    // Auto-fix trips with fallback names or ISO code as country (e.g. "Phnom Penh, KH")
+    const fallbackCount = trips.filter(t =>
+      /^Trip [A-Z]/.test(t.name || '') ||
+      !t.name ||
+      (t.country_code && t.name?.endsWith(', ' + t.country_code)) ||
+      (t.country_code && !t.country)
+    ).length;
     if (fallbackCount > 0) {
-      console.log(`[fossick] ${fallbackCount} trips with fallback names — triggering re-geocode…`);
+      console.log(`[fossick] ${fallbackCount} trips need name repair — triggering re-geocode…`);
       window.tt.fixFallbackNames().catch(() => {});
     }
     if (state.trips.unsubName) state.trips.unsubName();

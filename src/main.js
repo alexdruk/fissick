@@ -69,17 +69,22 @@ function _initLocalGeocoder() {
 }
 
 // Reverse geocode a single point offline → { city, country, countryCode }
+// ISO 3166-1 alpha-2 → English country name
+const _ISO = {"AD":"Andorra","AE":"United Arab Emirates","AF":"Afghanistan","AG":"Antigua and Barbuda","AL":"Albania","AM":"Armenia","AO":"Angola","AR":"Argentina","AT":"Austria","AU":"Australia","AZ":"Azerbaijan","BA":"Bosnia and Herzegovina","BB":"Barbados","BD":"Bangladesh","BE":"Belgium","BF":"Burkina Faso","BG":"Bulgaria","BH":"Bahrain","BI":"Burundi","BJ":"Benin","BN":"Brunei","BO":"Bolivia","BR":"Brazil","BS":"Bahamas","BT":"Bhutan","BW":"Botswana","BY":"Belarus","BZ":"Belize","CA":"Canada","CD":"DR Congo","CF":"Central African Republic","CG":"Congo","CH":"Switzerland","CI":"Ivory Coast","CL":"Chile","CM":"Cameroon","CN":"China","CO":"Colombia","CR":"Costa Rica","CU":"Cuba","CV":"Cape Verde","CY":"Cyprus","CZ":"Czech Republic","DE":"Germany","DJ":"Djibouti","DK":"Denmark","DO":"Dominican Republic","DZ":"Algeria","EC":"Ecuador","EE":"Estonia","EG":"Egypt","ER":"Eritrea","ES":"Spain","ET":"Ethiopia","FI":"Finland","FJ":"Fiji","FR":"France","GA":"Gabon","GB":"United Kingdom","GD":"Grenada","GE":"Georgia","GH":"Ghana","GM":"Gambia","GN":"Guinea","GQ":"Equatorial Guinea","GR":"Greece","GT":"Guatemala","GW":"Guinea-Bissau","GY":"Guyana","HN":"Honduras","HR":"Croatia","HT":"Haiti","HU":"Hungary","ID":"Indonesia","IE":"Ireland","IL":"Israel","IN":"India","IQ":"Iraq","IR":"Iran","IS":"Iceland","IT":"Italy","JM":"Jamaica","JO":"Jordan","JP":"Japan","KE":"Kenya","KG":"Kyrgyzstan","KH":"Cambodia","KI":"Kiribati","KM":"Comoros","KP":"North Korea","KR":"South Korea","KW":"Kuwait","KZ":"Kazakhstan","LA":"Laos","LB":"Lebanon","LI":"Liechtenstein","LK":"Sri Lanka","LR":"Liberia","LS":"Lesotho","LT":"Lithuania","LU":"Luxembourg","LV":"Latvia","LY":"Libya","MA":"Morocco","MC":"Monaco","MD":"Moldova","ME":"Montenegro","MG":"Madagascar","MK":"North Macedonia","ML":"Mali","MM":"Myanmar","MN":"Mongolia","MR":"Mauritania","MT":"Malta","MU":"Mauritius","MV":"Maldives","MW":"Malawi","MX":"Mexico","MY":"Malaysia","MZ":"Mozambique","NA":"Namibia","NE":"Niger","NG":"Nigeria","NI":"Nicaragua","NL":"Netherlands","NO":"Norway","NP":"Nepal","NR":"Nauru","NZ":"New Zealand","OM":"Oman","PA":"Panama","PE":"Peru","PG":"Papua New Guinea","PH":"Philippines","PK":"Pakistan","PL":"Poland","PT":"Portugal","PW":"Palau","PY":"Paraguay","QA":"Qatar","RO":"Romania","RS":"Serbia","RU":"Russia","RW":"Rwanda","SA":"Saudi Arabia","SB":"Solomon Islands","SC":"Seychelles","SD":"Sudan","SE":"Sweden","SG":"Singapore","SI":"Slovenia","SK":"Slovakia","SL":"Sierra Leone","SM":"San Marino","SN":"Senegal","SO":"Somalia","SR":"Suriname","SS":"South Sudan","ST":"Sao Tome and Principe","SV":"El Salvador","SY":"Syria","SZ":"Eswatini","TD":"Chad","TG":"Togo","TH":"Thailand","TJ":"Tajikistan","TL":"Timor-Leste","TM":"Turkmenistan","TN":"Tunisia","TO":"Tonga","TR":"Turkey","TT":"Trinidad and Tobago","TV":"Tuvalu","TZ":"Tanzania","UA":"Ukraine","UG":"Uganda","US":"United States","UY":"Uruguay","UZ":"Uzbekistan","VA":"Vatican","VC":"Saint Vincent and the Grenadines","VE":"Venezuela","VN":"Vietnam","VU":"Vanuatu","WS":"Samoa","YE":"Yemen","ZA":"South Africa","ZM":"Zambia","ZW":"Zimbabwe"};
+
 function _localReverseGeocode(lat, lng) {
   return new Promise((resolve) => {
     if (!_localGeocoderReady || !_localGeocoder) return resolve(null);
     try {
       _localGeocoder.lookUp({ latitude: lat, longitude: lng }, 1, (err, results) => {
         if (err || !results?.[0]?.[0]) return resolve(null);
-        const r = results[0][0];
+        const r           = results[0][0];
+        const countryCode = (r.countryCode || '').toUpperCase();
+        const country     = _ISO[countryCode] || countryCode || '';
         resolve({
-          city:        r.name || '',
-          country:     r.countryName || r.country || '',
-          countryCode: (r.countryCode || '').toUpperCase(),
+          city: r.name || '',
+          country,
+          countryCode,
         });
       });
     } catch { resolve(null); }
@@ -1819,16 +1824,37 @@ ipcMain.handle('trips:search-location', async (_event, { query }) => {
 // Re-geocode any trips still showing fallback "Trip Month Year" names.
 // Called automatically on startup if fallback names are detected.
 ipcMain.handle('trips:fix-fallback-names', async () => {
+  // Fix trips with fallback names OR with country_code but no country name
   const fallbacks = db.prepare(
-    `SELECT id AS tripId, center_lat AS lat, center_lng AS lng FROM trips
-     WHERE name LIKE 'Trip %' OR name IS NULL`
+    `SELECT id AS tripId, center_lat AS lat, center_lng AS lng, name, country_code FROM trips
+     WHERE name LIKE 'Trip %'
+        OR name IS NULL
+        OR (country_code IS NOT NULL AND (country IS NULL OR country = ''))`
   ).all();
-  if (!fallbacks.length) return { count: 0 };
-  console.log(`[fossick] Re-geocoding ${fallbacks.length} trips with fallback names…`);
-  _geocodeTripNames(fallbacks).catch(err =>
+
+  // Also fix trips where country name is just the ISO code (e.g. "Phnom Penh, KH")
+  const isoCodePattern = db.prepare(
+    `SELECT id AS tripId, center_lat AS lat, center_lng AS lng, name, country_code FROM trips
+     WHERE country_code IS NOT NULL AND name LIKE '%, ' || country_code`
+  ).all();
+
+  const all = [...fallbacks, ...isoCodePattern].filter((t, i, arr) =>
+    arr.findIndex(x => x.tripId === t.tripId) === i
+  );
+
+  if (!all.length) return { count: 0 };
+
+  // Clear cache entries for these trips so they get re-geocoded
+  for (const t of all) {
+    const key4 = `geocode:${parseFloat(t.lat).toFixed(4)}:${parseFloat(t.lng).toFixed(4)}`;
+    db.prepare(`DELETE FROM settings WHERE key = ?`).run(key4);
+  }
+
+  console.log(`[fossick] Re-geocoding ${all.length} trips with missing/incomplete names…`);
+  _geocodeTripNames(all).catch(err =>
     console.error('[fossick] fix-fallback-names error:', err.message)
   );
-  return { count: fallbacks.length };
+  return { count: all.length };
 });
 
 ipcMain.handle('settings:get-working-folder', () => {
