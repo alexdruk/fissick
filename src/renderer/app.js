@@ -441,15 +441,18 @@ async function loadResults() {
     if (_sbAlbumsS) _sbAlbumsS.textContent   = _hasAlbums ? _albumsList.length.toLocaleString() : '—';
   } catch {}
 
-  // Places tab — show if location data exists (places may or may not be computed yet)
+  // Places tab — show if there are GPS photos OR Timeline visits
   try {
     const _locStat    = await window.tt.getLocationStats();
-    const _hasLoc2    = (_locStat?.visits || 0) > 0;
+    const _stats2     = await window.tt.getStats();
+    const _hasVisits  = (_locStat?.visits || 0) > 0;
+    const _hasGps     = (_stats2?.with_gps || 0) > 0;
+    const _showPlaces = _hasVisits || _hasGps;
     const _tabPlaces  = document.getElementById('tab-places');
     const _sbPlacesN  = document.getElementById('sb-places');
-    if (_tabPlaces) _tabPlaces.style.display = _hasLoc2 ? '' : 'none';
-    if (_sbPlacesN) _sbPlacesN.style.display = _hasLoc2 ? '' : 'none';
-    // Update places stat from DB
+    if (_tabPlaces) _tabPlaces.style.display = _showPlaces ? '' : 'none';
+    if (_sbPlacesN) _sbPlacesN.style.display = _showPlaces ? '' : 'none';
+    // Update places stat from DB if already computed
     const _placesList = await window.tt.getPlaces();
     const _sbPlacesS  = document.getElementById('sb-places-stat');
     if (_sbPlacesS) _sbPlacesS.textContent = _placesList.length > 0 ? _placesList.length.toLocaleString() : '—';
@@ -1569,7 +1572,7 @@ const Places = (() => {
       const result = await window.tt.computePlaces();
       if (!result.ok) {
         if (btn) { btn.textContent = 'Compute Places'; btn.disabled = false; }
-        alert('No Timeline visit data found. Process your Takeout archive first.');
+        alert('No GPS or location data found. Process your Takeout archive first.');
         return;
       }
       _places = await window.tt.getPlaces();

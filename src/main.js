@@ -1550,71 +1550,92 @@ ipcMain.handle('db:get-album-photos', (_event, { albumId, offset = 0, limit = 60
 // Compute places from named Timeline visits + associate nearby photos.
 // Called on demand (like Compute Trips). Safe to re-run — clears and rebuilds.
 ipcMain.handle('places:compute', async () => {
-  // Check we have visit data
+  await _initLocalGeocoder();
+
   const visitCount = db.prepare(
     `SELECT COUNT(*) as n FROM locations WHERE type = 'visit' AND name IS NOT NULL AND name != ''`
   ).get().n;
 
-  if (visitCount === 0) {
-    return { ok: false, reason: 'no_visits', total: 0 };
+  const gpsCount = db.prepare(
+    `SELECT COUNT(*) as n FROM photos WHERE lat IS NOT NULL AND lng IS NOT NULL`
+  ).get().n;
+
+  if (visitCount === 0 && gpsCount === 0) {
+    return { ok: false, reason: 'no_data', total: 0 };
   }
 
   db.exec('DELETE FROM places');
-
-  // Group named visits by name — aggregate lat/lng as centroid, count visits.
-  // Filter: at least 1 visit (all named places). Noise is handled in UI via photo_count.
-  const grouped = db.prepare(`
-    SELECT
-      name,
-      AVG(lat)   AS lat,
-      AVG(lng)   AS lng,
-      COUNT(*)   AS visit_count
-    FROM locations
-    WHERE type = 'visit' AND name IS NOT NULL AND name != ''
-    GROUP BY name
-    ORDER BY visit_count DESC, name ASC
-  `).all();
 
   const stmtInsert = db.prepare(`
     INSERT INTO places (name, lat, lng, visit_count, photo_count, cover_photo_id, country_code, country)
     VALUES (?, ?, ?, ?, 0, NULL, NULL, NULL)
   `);
-
-  // For each place, count photos within ~500m (approx 0.005 degrees)
   const stmtPhotos = db.prepare(`
     SELECT id, thumbnail_path, file_path, date_ts
     FROM photos
-    WHERE lat BETWEEN ? AND ?
-      AND lng BETWEEN ? AND ?
+    WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?
       AND lat IS NOT NULL AND lng IS NOT NULL
     ORDER BY date_ts ASC
     LIMIT 100
   `);
-
   const stmtUpdatePlace = db.prepare(`
-    UPDATE places SET photo_count = ?, cover_photo_id = ? WHERE id = ?
+    UPDATE places SET photo_count = ?, cover_photo_id = ?, country_code = ?, country = ? WHERE id = ?
   `);
 
-  const RADIUS = 0.005; // ~500m in degrees (approx)
+  const RADIUS = 0.005; // ~500m bounding box
 
-  db.transaction(() => {
+  // ── Source A: named Timeline visits ─────────────────────────────────────────
+  if (visitCount > 0) {
+    const grouped = db.prepare(`
+      SELECT name, AVG(lat) AS lat, AVG(lng) AS lng, COUNT(*) AS visit_count
+      FROM locations
+      WHERE type = 'visit' AND name IS NOT NULL AND name != ''
+      GROUP BY name
+      ORDER BY visit_count DESC, name ASC
+    `).all();
+
     for (const place of grouped) {
-      const placeId = stmtInsert.run(
-        place.name, place.lat, place.lng, place.visit_count
-      ).lastInsertRowid;
-
-      const nearbyPhotos = stmtPhotos.all(
-        place.lat - RADIUS, place.lat + RADIUS,
-        place.lng - RADIUS, place.lng + RADIUS
-      );
-
-      if (nearbyPhotos.length > 0) {
-        stmtUpdatePlace.run(nearbyPhotos.length, nearbyPhotos[0].id, placeId);
-      }
+      const placeId = stmtInsert.run(place.name, place.lat, place.lng, place.visit_count).lastInsertRowid;
+      const nearby  = stmtPhotos.all(place.lat - RADIUS, place.lat + RADIUS, place.lng - RADIUS, place.lng + RADIUS);
+      const geo     = await _localReverseGeocode(place.lat, place.lng);
+      stmtUpdatePlace.run(nearby.length, nearby[0]?.id ?? null, geo?.countryCode ?? null, geo?.country ?? null, placeId);
     }
-  })();
 
-  return { ok: true, total: grouped.length };
+    return { ok: true, total: grouped.length, source: 'timeline' };
+  }
+
+  // ── Source B: GPS photo clusters (fallback when no Timeline data) ────────────
+  // Grid cell: 0.01 degree (~1km). Minimum 3 photos per cell to qualify.
+  // Reverse-geocode each centroid with local-reverse-geocoder for a place name.
+  const GRID    = 0.01;
+  const MIN_PH  = 3;
+
+  const clusters = db.prepare(`
+    SELECT
+      ROUND(lat / ${GRID}) * ${GRID}  AS glat,
+      ROUND(lng / ${GRID}) * ${GRID}  AS glng,
+      COUNT(*)                         AS photo_count,
+      AVG(lat)                         AS lat,
+      AVG(lng)                         AS lng,
+      MIN(id)                          AS cover_id
+    FROM photos
+    WHERE lat IS NOT NULL AND lng IS NOT NULL
+    GROUP BY ROUND(lat / ${GRID}), ROUND(lng / ${GRID})
+    HAVING COUNT(*) >= ${MIN_PH}
+    ORDER BY COUNT(*) DESC
+  `).all();
+
+  let inserted = 0;
+  for (const cluster of clusters) {
+    const geo  = await _localReverseGeocode(cluster.lat, cluster.lng);
+    const name = geo ? (geo.city ? `${geo.city}, ${geo.country}` : geo.country) : `${cluster.lat.toFixed(2)}, ${cluster.lng.toFixed(2)}`;
+    const placeId = stmtInsert.run(name, cluster.lat, cluster.lng, 0).lastInsertRowid;
+    const nearby  = stmtPhotos.all(cluster.lat - RADIUS, cluster.lat + RADIUS, cluster.lng - RADIUS, cluster.lng + RADIUS);
+    stmtUpdatePlace.run(nearby.length || cluster.photo_count, nearby[0]?.id ?? cluster.cover_id, geo?.countryCode ?? null, geo?.country ?? null, placeId);
+    inserted++;
+  }
+
+  return { ok: true, total: inserted, source: 'gps_clusters' };
 });
 
 ipcMain.handle('db:get-places', (_event, { sort = 'visits-desc' } = {}) => {
