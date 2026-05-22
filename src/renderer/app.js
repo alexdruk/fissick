@@ -1190,13 +1190,20 @@ async function openLightbox(photo) {
     lbVideo.play().catch(() => {}); // autoplay, ignore if blocked
   } else if (HEIC_EXTS.includes(ext)) {
     lbImg.style.display = 'block';
+    lbImg.src = '';
     lbImg.alt = 'Converting…';
     try {
       const result = await window.tt.heicToJpeg({ filePath: photo.file_path });
-      lbImg.src = result.ok ? `local://${result.tempPath}` : '';
-      lbImg.alt = result.ok ? '' : 'Cannot display this HEIC file';
-    } catch {
-      lbImg.alt = 'Conversion failed';
+      if (result.ok) {
+        const encoded = result.tempPath.split('/').map(s => encodeURIComponent(s)).join('/');
+        lbImg.src = `local://${encoded}`;
+        lbImg.alt = '';
+      } else {
+        lbImg.alt = `Cannot display HEIC: ${result.error || 'conversion failed'}`;
+        console.error('[lightbox] HEIC failed:', result.error);
+      }
+    } catch (err) {
+      lbImg.alt = `Conversion failed: ${err.message}`;
     }
   } else {
     lbImg.style.display = 'block';

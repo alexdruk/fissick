@@ -997,15 +997,25 @@ ipcMain.handle('util:heic-to-jpeg', async (_event, { filePath }) => {
   try {
     const tempPath = path.join(app.getPath('temp'), 'fossick_preview_' + Date.now() + '.jpg');
     const { execFileSync } = require('child_process');
-    execFileSync(FFMPEG_BIN, ['-i', filePath, '-frames:v', '1', '-update', '1', '-y', tempPath], {
-      timeout: 20000,
-      stdio: 'pipe',
-    });
+
+    if (process.platform === 'darwin') {
+      // Use sips — built-in on macOS, always has HEIC support
+      // ffmpeg-static doesn't include libheif so can't decode HEIC
+      execFileSync('sips', ['-s', 'format', 'jpeg', filePath, '--out', tempPath], {
+        timeout: 20000, stdio: 'pipe',
+      });
+    } else {
+      execFileSync(FFMPEG_BIN, ['-i', filePath, '-frames:v', '1', '-update', '1', '-y', tempPath], {
+        timeout: 20000, stdio: 'pipe',
+      });
+    }
+
     if (!fs.existsSync(tempPath) || fs.statSync(tempPath).size < 100) {
-      return { ok: false, error: 'ffmpeg produced empty output' };
+      return { ok: false, error: 'Conversion produced empty output' };
     }
     return { ok: true, tempPath };
   } catch (err) {
+    console.error('[fossick] heicToJpeg error:', err.message);
     return { ok: false, error: err.message };
   }
 });
