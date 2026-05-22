@@ -553,6 +553,9 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
       controlSab,      // SharedArrayBuffer for pause/resume/abort
     },
   });
+  // Send immediately from main process — Worker Thread cold start takes 2-5s
+  // before its own status('starting') fires. This message appears instantly.
+  mainWindow.webContents.send('process-event', { type: 'status', phase: 'starting', message: 'Starting up…' });
 
   activeWorker.on('message', (msg) => {
     // When the photos worker has finished extracting and detecting schemas, it
