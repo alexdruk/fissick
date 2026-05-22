@@ -860,6 +860,160 @@ html, body {
    ALBUMS PANEL
 
 /* ════════════════════════════════════════
+   PLACES PANEL
+════════════════════════════════════════ */
+#places-panel {
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+#places-panel.visible { display: flex; }
+
+/* ── Places list ───────────────────────── */
+#places-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+.places-list-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.places-list-count { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+
+.places-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.place-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color .1s, box-shadow .1s;
+  user-select: none;
+}
+.place-card:hover { border-color: var(--border2); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.place-thumb {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  background: var(--panel2);
+  display: block;
+}
+.place-thumb-placeholder {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--panel2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+}
+.place-info { padding: 9px 11px; border-top: 1px solid var(--border); }
+.place-name {
+  font-family: var(--serif);
+  font-size: 12.5px;
+  color: var(--ink);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.place-meta { font-family: var(--mono); font-size: 9px; color: var(--dim); }
+
+/* ── Places empty state ─────────────────── */
+#places-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.places-empty-inner { text-align: center; max-width: 360px; padding: 40px 20px; }
+.places-empty-icon  { font-size: 40px; margin-bottom: 14px; }
+.places-empty-title { font-family: var(--serif); font-size: 20px; color: var(--ink); margin-bottom: 8px; }
+.places-empty-sub   { font-size: 13px; color: var(--mu); line-height: 1.7; margin-bottom: 20px; }
+.places-cta-btn {
+  background: var(--acc); color: #fff; border: none;
+  padding: 9px 22px; border-radius: 4px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+  cursor: pointer; transition: opacity .1s;
+}
+.places-cta-btn:hover { opacity: .88; }
+
+/* ── Place detail ───────────────────────── */
+#places-detail {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+#places-detail.visible { display: flex; }
+#places-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+#places-detail-header button {
+  font-family: var(--mono); font-size: 10px; color: var(--acc);
+  background: transparent; border: none; cursor: pointer; padding: 0;
+}
+#places-detail-header button:hover { text-decoration: underline; }
+#places-detail-title-wrap { flex: 1; min-width: 0; }
+#places-detail-title { font-family: var(--serif); font-size: 16px; color: var(--ink); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#places-detail-meta  { font-family: var(--mono); font-size: 10px; color: var(--dim); display: block; margin-top: 1px; }
+
+/* Map + photo strip layout — map takes 60%, photo strip 40% */
+#places-detail-body  { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+#places-detail-map   { flex: 1; min-height: 0; }
+#places-photo-strip  {
+  height: 148px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+#places-photo-strip:empty::after {
+  content: 'No photos found near this location';
+  font-family: var(--mono); font-size: 10px; color: var(--dim);
+  white-space: nowrap;
+}
+.place-strip-photo {
+  height: 128px;
+  width: 128px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color .1s;
+}
+.place-strip-photo:hover { border-color: var(--acc); }
+
+/* ════════════════════════════════════════
    ALBUMS PANEL
 ════════════════════════════════════════ */
 #albums-panel {
@@ -1298,9 +1452,11 @@ html, body {
     <div class="sb-stat-row"><span class="sb-stat-label">With GPS</span><span class="sb-stat-value" id="sb-gps">—</span></div>
     <div class="sb-stat-row"><span class="sb-stat-label">Locations</span><span class="sb-stat-value blue" id="sb-locations">—</span></div>
     <div class="sb-stat-row"><span class="sb-stat-label">Albums</span><span class="sb-stat-value" id="sb-albums-stat">—</span></div>
+    <div class="sb-stat-row"><span class="sb-stat-label">Places</span><span class="sb-stat-value" id="sb-places-stat">—</span></div>
     <div class="sb-divider"></div>
     <div class="sb-item" id="sb-trips" style="display:none"><span>🌍</span> Trips</div>
     <div class="sb-item" id="sb-albums" style="display:none"><span>📚</span> Albums</div>
+    <div class="sb-item" id="sb-places" style="display:none"><span>📍</span> Places</div>
   </div>
 
   <!-- Main area: exactly fills the space right of sidebar, below titlebar -->
@@ -1459,6 +1615,7 @@ html, body {
         <div class="filter-tab" data-filter="map" id="tab-map" style="display:none">🗺 Map</div>
         <div class="filter-tab" data-filter="trips" id="tab-trips" style="display:none">🌍 Trips</div>
         <div class="filter-tab" data-filter="albums" id="tab-albums" style="display:none">📚 Albums</div>
+        <div class="filter-tab" data-filter="places" id="tab-places" style="display:none">📍 Places</div>
       </div>
 
       <!-- Date range filter row -->
@@ -1596,6 +1753,56 @@ html, body {
         </div>
 
       </div><!-- /trips-panel -->
+
+
+      <!-- Places panel -->
+      <div id="places-panel">
+
+        <!-- Empty state: no location data / not yet computed -->
+        <div id="places-empty">
+          <div class="places-empty-inner">
+            <div class="places-empty-icon">📍</div>
+            <h3 class="places-empty-title">Discover your places</h3>
+            <p class="places-empty-sub">Fossick will build a map of every named place Google recorded in your Timeline — cafés, airports, museums, neighbourhoods — and show which photos you took nearby.</p>
+            <button id="btn-compute-places" class="places-cta-btn">Compute Places</button>
+          </div>
+        </div>
+
+        <!-- Places list -->
+        <div id="places-list" style="display:none">
+          <div class="places-list-header">
+            <span class="places-list-count" id="places-list-count"></span>
+            <div class="trips-sort-wrap" style="margin-left:auto">
+              <label class="trips-sort-label" for="places-sort-select">Sort</label>
+              <select id="places-sort-select" class="trips-sort-select">
+                <option value="visits-desc">Visits — most first</option>
+                <option value="visits-asc">Visits — fewest first</option>
+                <option value="photos-desc">Photos — most first</option>
+                <option value="photos-asc">Photos — fewest first</option>
+                <option value="name-asc">Name — A to Z</option>
+                <option value="name-desc">Name — Z to A</option>
+              </select>
+            </div>
+          </div>
+          <div id="places-grid" class="places-grid"></div>
+        </div>
+
+        <!-- Place detail -->
+        <div id="places-detail">
+          <div id="places-detail-header">
+            <button id="btn-places-back">← Back to places</button>
+            <div id="places-detail-title-wrap">
+              <span id="places-detail-title"></span>
+              <span id="places-detail-meta"></span>
+            </div>
+          </div>
+          <div id="places-detail-body">
+            <div id="places-detail-map"></div>
+            <div id="places-photo-strip"></div>
+          </div>
+        </div>
+
+      </div><!-- /places-panel -->
 
       <!-- Albums panel -->
       <div id="albums-panel">
@@ -1736,6 +1943,7 @@ html, body {
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin="anonymous"></script>
 <script src="locationMap.js"></script>
 <script src="tripsMap.js"></script>
+<script src="placesMap.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

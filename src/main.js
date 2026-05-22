@@ -351,6 +351,21 @@ app.whenReady().then(() => {
   try { db.exec('ALTER TABLE trips ADD COLUMN country_code TEXT'); } catch {}
   try { db.exec('ALTER TABLE trips ADD COLUMN country TEXT'); } catch {}
   try { db.exec('ALTER TABLE trips ADD COLUMN distance_km REAL'); } catch {}
+  // Places feature table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS places (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      name           TEXT NOT NULL,
+      lat            REAL NOT NULL,
+      lng            REAL NOT NULL,
+      visit_count    INTEGER DEFAULT 0,
+      photo_count    INTEGER DEFAULT 0,
+      cover_photo_id INTEGER REFERENCES photos(id),
+      country_code   TEXT,
+      country        TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_places_lat_lng ON places(lat, lng);
+  `);
   createWindow();
   // Start local geocoder init in background — it downloads ~7MB on first use
   _initLocalGeocoder().catch(() => {});
@@ -486,6 +501,7 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
   // Wipe previous run's data and mark as incomplete
   db.exec('DELETE FROM photo_albums');
   db.exec('DELETE FROM albums');
+  db.exec('DELETE FROM places');
   db.exec('DELETE FROM photos');
   db.exec('DELETE FROM locations');
   db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_complete', '0')").run();
@@ -724,6 +740,7 @@ ipcMain.handle('db:has-data', () => {
 ipcMain.handle('db:reset', () => {
   db.exec('DELETE FROM photo_albums');
   db.exec('DELETE FROM albums');
+  db.exec('DELETE FROM places');
   db.exec('DELETE FROM photos');
   db.exec('DELETE FROM locations');
   return { ok: true };
@@ -1525,6 +1542,119 @@ ipcMain.handle('db:get-album-photos', (_event, { albumId, offset = 0, limit = 60
   return { photos, total };
 });
 
+// ── Places ─────────────────────────────────────────────────────────────────────────────────
+
+// Compute places from named Timeline visits + associate nearby photos.
+// Called on demand (like Compute Trips). Safe to re-run — clears and rebuilds.
+ipcMain.handle('places:compute', async () => {
+  // Check we have visit data
+  const visitCount = db.prepare(
+    `SELECT COUNT(*) as n FROM locations WHERE type = 'visit' AND name IS NOT NULL AND name != ''`
+  ).get().n;
+
+  if (visitCount === 0) {
+    return { ok: false, reason: 'no_visits', total: 0 };
+  }
+
+  db.exec('DELETE FROM places');
+
+  // Group named visits by name — aggregate lat/lng as centroid, count visits.
+  // Filter: at least 1 visit (all named places). Noise is handled in UI via photo_count.
+  const grouped = db.prepare(`
+    SELECT
+      name,
+      AVG(lat)   AS lat,
+      AVG(lng)   AS lng,
+      COUNT(*)   AS visit_count
+    FROM locations
+    WHERE type = 'visit' AND name IS NOT NULL AND name != ''
+    GROUP BY name
+    ORDER BY visit_count DESC, name ASC
+  `).all();
+
+  const stmtInsert = db.prepare(`
+    INSERT INTO places (name, lat, lng, visit_count, photo_count, cover_photo_id, country_code, country)
+    VALUES (?, ?, ?, ?, 0, NULL, NULL, NULL)
+  `);
+
+  // For each place, count photos within ~500m (approx 0.005 degrees)
+  const stmtPhotos = db.prepare(`
+    SELECT id, thumbnail_path, file_path, date_ts
+    FROM photos
+    WHERE lat BETWEEN ? AND ?
+      AND lng BETWEEN ? AND ?
+      AND lat IS NOT NULL AND lng IS NOT NULL
+    ORDER BY date_ts ASC
+    LIMIT 100
+  `);
+
+  const stmtUpdatePlace = db.prepare(`
+    UPDATE places SET photo_count = ?, cover_photo_id = ? WHERE id = ?
+  `);
+
+  const RADIUS = 0.005; // ~500m in degrees (approx)
+
+  db.transaction(() => {
+    for (const place of grouped) {
+      const placeId = stmtInsert.run(
+        place.name, place.lat, place.lng, place.visit_count
+      ).lastInsertRowid;
+
+      const nearbyPhotos = stmtPhotos.all(
+        place.lat - RADIUS, place.lat + RADIUS,
+        place.lng - RADIUS, place.lng + RADIUS
+      );
+
+      if (nearbyPhotos.length > 0) {
+        stmtUpdatePlace.run(nearbyPhotos.length, nearbyPhotos[0].id, placeId);
+      }
+    }
+  })();
+
+  return { ok: true, total: grouped.length };
+});
+
+ipcMain.handle('db:get-places', (_event, { sort = 'visits-desc' } = {}) => {
+  const SORT_MAP = {
+    'visits-desc':  'visit_count DESC, name ASC',
+    'visits-asc':   'visit_count ASC,  name ASC',
+    'photos-desc':  'photo_count DESC, name ASC',
+    'photos-asc':   'photo_count ASC,  name ASC',
+    'name-asc':     'name ASC',
+    'name-desc':    'name DESC',
+  };
+  const order = SORT_MAP[sort] || SORT_MAP['visits-desc'];
+
+  return db.prepare(`
+    SELECT p.*,
+           ph.thumbnail_path AS cover_thumbnail,
+           ph.file_path      AS cover_file_path
+    FROM places p
+    LEFT JOIN photos ph ON p.cover_photo_id = ph.id
+    ORDER BY ${order}
+  `).all();
+});
+
+ipcMain.handle('db:get-place-detail', (_event, { placeId, radius = 0.005 } = {}) => {
+  const place = db.prepare(`SELECT * FROM places WHERE id = ?`).get(placeId);
+  if (!place) return null;
+
+  const photos = db.prepare(`
+    SELECT id, file_path, filename, thumbnail_path, date_ts, lat, lng
+    FROM photos
+    WHERE lat BETWEEN ? AND ?
+      AND lng BETWEEN ? AND ?
+      AND lat IS NOT NULL AND lng IS NOT NULL
+    ORDER BY date_ts ASC
+    LIMIT 200
+  `).all(
+    place.lat - radius, place.lat + radius,
+    place.lng - radius, place.lng + radius
+  );
+
+  return { place, photos };
+});
+
 // ── Trips ──────────────────────────────────────────────────────────────────────
 
 // Grid-based density clustering to find candidate home zones.
@@ -2039,3 +2169,5 @@ ipcMain.handle('licence:deactivate', () => {
   db.prepare("DELETE FROM settings WHERE key = 'licence_key'").run();
   return { ok: true };
 });
+// src/main.js — Electron main process
+// Handles: window creation, IPC, SQLite init, local-file protocol, Worker lifecycle

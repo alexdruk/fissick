@@ -20,6 +20,8 @@ const state = {
   // selectedPaths: Set of file_path strings. Lives in memory, not in the DOM.
   // Updated by checkbox clicks, filter-tab bulk selection, and select-all.
   selectedPaths: new Set(),
+  // ── Places
+  placesComputed: false,
   // ── Albums — set when viewing a specific album's photos
   albumId:   null,
   albumName: null,
@@ -141,10 +143,15 @@ async function startProcessing() {
   document.getElementById('sb-trips').style.display = 'none';
   const _sbAlbums0 = document.getElementById('sb-albums');
   if (_sbAlbums0) _sbAlbums0.style.display = 'none';
+  const _sbPlaces0 = document.getElementById('sb-places');
+  if (_sbPlaces0) _sbPlaces0.style.display = 'none';
+  document.getElementById('tab-places')?.style && (document.getElementById('tab-places').style.display = 'none');
   _showMapPanel(false);
   _showTripsPanel(false);
   _showAlbumsPanel(false);
+  _showPlacesPanel(false);
   Albums.reset();
+  Places.reset();
   Trips.reset();
 
   resetProcessingUI();
@@ -433,6 +440,21 @@ async function loadResults() {
     if (_sbAlbumsN) _sbAlbumsN.style.display = _hasAlbums ? '' : 'none';
     if (_sbAlbumsS) _sbAlbumsS.textContent   = _hasAlbums ? _albumsList.length.toLocaleString() : '—';
   } catch {}
+
+  // Places tab — show if location data exists (places may or may not be computed yet)
+  try {
+    const _locStat    = await window.tt.getLocationStats();
+    const _hasLoc2    = (_locStat?.visits || 0) > 0;
+    const _tabPlaces  = document.getElementById('tab-places');
+    const _sbPlacesN  = document.getElementById('sb-places');
+    if (_tabPlaces) _tabPlaces.style.display = _hasLoc2 ? '' : 'none';
+    if (_sbPlacesN) _sbPlacesN.style.display = _hasLoc2 ? '' : 'none';
+    // Update places stat from DB
+    const _placesList = await window.tt.getPlaces();
+    const _sbPlacesS  = document.getElementById('sb-places-stat');
+    if (_sbPlacesS) _sbPlacesS.textContent = _placesList.length > 0 ? _placesList.length.toLocaleString() : '—';
+    if (_placesList.length > 0) state.placesComputed = true;
+  } catch {}
 }
 
 async function refreshStats() {
@@ -655,6 +677,12 @@ document.getElementById('btn-back-results').addEventListener('click', async () =
   const _sbAlbumsSB = document.getElementById('sb-albums-stat');
   if (_sbAlbumsB)  _sbAlbumsB.style.display  = 'none';
   if (_sbAlbumsSB) _sbAlbumsSB.textContent   = '—';
+  document.getElementById('sb-places')?.style && (document.getElementById('sb-places').style.display = 'none');
+  document.getElementById('tab-places')?.style && (document.getElementById('tab-places').style.display = 'none');
+  const _sbPlacesSB = document.getElementById('sb-places-stat');
+  if (_sbPlacesSB) _sbPlacesSB.textContent = '—';
+  state.placesComputed = false;
+  _showPlacesPanel(false);
   showView('import');
 });
 
@@ -679,6 +707,7 @@ document.querySelectorAll('.filter-tab').forEach(tab => {
     } else if (tab.dataset.filter === 'albums') {
       _showMapPanel(false);
       _showTripsPanel(false);
+      _showPlacesPanel(false);
       document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
       document.getElementById('sb-albums')?.classList.add('active');
       state.albumId   = null;
@@ -686,10 +715,18 @@ document.querySelectorAll('.filter-tab').forEach(tab => {
       const _bcAT = document.getElementById('albums-breadcrumb');
       if (_bcAT) _bcAT.classList.remove('visible');
       Albums.onTabActivated();
+    } else if (tab.dataset.filter === 'places') {
+      _showMapPanel(false);
+      _showTripsPanel(false);
+      _showAlbumsPanel(false);
+      document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+      document.getElementById('sb-places')?.classList.add('active');
+      Places.onTabActivated();
     } else {
       _showMapPanel(false);
       _showTripsPanel(false);
       _showAlbumsPanel(false);
+      _showPlacesPanel(false);
       // Clear album view when switching to a standard filter tab
       if (state.albumId != null) {
         state.albumId   = null;
@@ -1453,6 +1490,219 @@ function _showTripsPanel(show) {
     if (thumbGenBar)  thumbGenBar.style.display   = '';
   }
 }
+
+// ── Places panel show/hide ──────────────────────────────────────────────────────────────────
+function _showPlacesPanel(show) {
+  const viewResults = document.getElementById('view-results');
+  const photoList   = document.getElementById('photo-list');
+  const listFooter  = viewResults?.querySelector('.list-footer');
+  const trialBanner = document.getElementById('trial-banner');
+  const placesPanel = document.getElementById('places-panel');
+  const exportBar   = document.getElementById('export-bar');
+  const dateRangeBar= document.getElementById('date-range-bar');
+  const thumbGenBar = document.getElementById('thumb-gen-bar');
+  const selBar      = document.getElementById('select-bar');
+  if (!viewResults || !placesPanel) return;
+
+  if (show) {
+    [photoList, listFooter, trialBanner, selBar, exportBar, dateRangeBar, thumbGenBar]
+      .forEach(el => { if (el) el.style.display = 'none'; });
+    viewResults.style.overflow = 'hidden';
+    const usedH = (viewResults.querySelector('.results-header')?.offsetHeight || 0)
+                + (viewResults.querySelector('.filter-bar')?.offsetHeight     || 0);
+    placesPanel.style.height = (viewResults.clientHeight - usedH) + 'px';
+    placesPanel.classList.add('visible');
+  } else {
+    PlaceDetailMap.destroy();
+    placesPanel.classList.remove('visible');
+    viewResults.style.overflow = '';
+    if (photoList)     photoList.style.display    = '';
+    if (listFooter)    listFooter.style.display   = '';
+    if (selBar)        selBar.style.display        = '';
+    if (exportBar)     exportBar.style.display     = '';
+    if (dateRangeBar)  dateRangeBar.style.display  = '';
+    if (thumbGenBar)   thumbGenBar.style.display   = '';
+  }
+}
+
+// ── Places module ─────────────────────────────────────────────────────────────────────────────────
+const Places = (() => {
+  'use strict';
+
+  let _places = [];
+
+  function _setPlacesPanelState(state) {
+    // state: 'empty' | 'list' | 'detail'
+    document.getElementById('places-empty').style.display  = state === 'empty'  ? '' : 'none';
+    document.getElementById('places-list').style.display   = state === 'list'   ? '' : 'none';
+    const det = document.getElementById('places-detail');
+    if (state === 'detail') det.classList.add('visible');
+    else                    det.classList.remove('visible');
+  }
+
+  async function onTabActivated() {
+    _showPlacesPanel(true);
+    if (state.placesComputed && _places.length > 0) {
+      _setPlacesPanelState('list');
+      _renderGrid();
+      return;
+    }
+    // Check DB — may have been computed in a previous session
+    try {
+      _places = await window.tt.getPlaces();
+      if (_places.length > 0) {
+        state.placesComputed = true;
+        _setPlacesPanelState('list');
+        _renderGrid();
+        return;
+      }
+    } catch {}
+    _setPlacesPanelState('empty');
+  }
+
+  async function computePlaces() {
+    _setPlacesPanelState('empty');
+    const btn = document.getElementById('btn-compute-places');
+    if (btn) { btn.textContent = 'Computing…'; btn.disabled = true; }
+
+    try {
+      const result = await window.tt.computePlaces();
+      if (!result.ok) {
+        if (btn) { btn.textContent = 'Compute Places'; btn.disabled = false; }
+        alert('No Timeline visit data found. Process your Takeout archive first.');
+        return;
+      }
+      _places = await window.tt.getPlaces();
+      state.placesComputed = true;
+      // Update sidebar stat
+      const sbStat = document.getElementById('sb-places-stat');
+      if (sbStat) sbStat.textContent = _places.length.toLocaleString();
+      _setPlacesPanelState('list');
+      _renderGrid();
+    } catch (err) {
+      if (btn) { btn.textContent = 'Compute Places'; btn.disabled = false; }
+      console.error('[Places] computePlaces error:', err);
+    }
+  }
+
+  function _renderGrid() {
+    const grid = document.getElementById('places-grid');
+    if (!grid) return;
+    const countEl = document.getElementById('places-list-count');
+    if (countEl) countEl.textContent = _places.length.toLocaleString() + ' place' + (_places.length !== 1 ? 's' : '');
+    grid.innerHTML = '';
+    for (const place of _places) grid.appendChild(_renderCard(place));
+  }
+
+  function _renderCard(place) {
+    const card = document.createElement('div');
+    card.className = 'place-card';
+    const thumbSrc = place.cover_thumbnail || place.cover_file_path;
+    const thumbHtml = thumbSrc
+      ? '<img class="place-thumb" src="local://' + thumbSrc + '" alt="" loading="lazy"' +
+        ' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+        '<div class="place-thumb-placeholder" style="display:none">&#128205;</div>'
+      : '<div class="place-thumb-placeholder">&#128205;</div>';
+    const visits = place.visit_count || 0;
+    const photos = place.photo_count || 0;
+    const metaParts = [visits + ' visit' + (visits !== 1 ? 's' : '')];
+    if (photos > 0) metaParts.push(photos + ' photo' + (photos !== 1 ? 's' : ''));
+    card.innerHTML = thumbHtml +
+      '<div class="place-info">' +
+      '<div class="place-name" title="' + _aesc(place.name) + '">' + _aesc(place.name) + '</div>' +
+      '<div class="place-meta">' + metaParts.join(' · ') + '</div>' +
+      '</div>';
+    card.addEventListener('click', () => _openDetail(place));
+    return card;
+  }
+
+  async function _openDetail(place) {
+    _setPlacesPanelState('detail');
+    const titleEl = document.getElementById('places-detail-title');
+    const metaEl  = document.getElementById('places-detail-meta');
+    if (titleEl) titleEl.textContent = place.name;
+    const visits = place.visit_count || 0;
+    const photos = place.photo_count || 0;
+    if (metaEl) metaEl.textContent =
+      visits + ' visit' + (visits !== 1 ? 's' : '') +
+      (photos > 0 ? ' · ' + photos + ' photo' + (photos !== 1 ? 's' : '') + ' nearby' : '');
+
+    // Build photo strip
+    const strip = document.getElementById('places-photo-strip');
+    if (strip) strip.innerHTML = '';
+
+    let detail;
+    try { detail = await window.tt.getPlaceDetail({ placeId: place.id }); } catch {}
+
+    const photos_data = detail?.photos || [];
+
+    // Render photo strip
+    if (strip) {
+      for (const ph of photos_data) {
+        const src = (ph.thumbnail_path || ph.file_path || '').split('/').map(encodeURIComponent).join('/');
+        const img = document.createElement('img');
+        img.className = 'place-strip-photo';
+        img.src = 'local://' + src;
+        img.alt = ph.filename || '';
+        img.title = ph.filename || '';
+        img.addEventListener('click', () => openLightbox(ph));
+        strip.appendChild(img);
+      }
+    }
+
+    // Render map
+    await PlaceDetailMap.init(place, photos_data, (ph) => openLightbox(ph));
+  }
+
+  async function applySort(sortValue) {
+    try { _places = await window.tt.getPlaces({ sort: sortValue }); } catch { return; }
+    _renderGrid();
+  }
+
+  function reset() {
+    _places = [];
+    state.placesComputed = false;
+    PlaceDetailMap.destroy();
+  }
+
+  function _aesc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  return { onTabActivated, computePlaces, applySort, reset };
+})();
+
+// Places: compute button
+document.getElementById('btn-compute-places')?.addEventListener('click', () => Places.computePlaces());
+
+// Places: back button
+document.getElementById('btn-places-back')?.addEventListener('click', async () => {
+  PlaceDetailMap.destroy();
+  document.getElementById('places-detail')?.classList.remove('visible');
+  document.getElementById('places-list').style.display = '';
+  document.getElementById('places-empty').style.display = 'none';
+});
+
+// Places: sort selector
+document.getElementById('places-sort-select')?.addEventListener('change', (e) => {
+  Places.applySort(e.target.value);
+});
+
+// sb-places sidebar click
+document.getElementById('sb-places')?.addEventListener('click', async () => {
+  if (state.view !== 'results') {
+    await loadResults();
+    showView('results');
+  }
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.filter-tab[data-filter="places"]')?.classList.add('active');
+  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  document.getElementById('sb-places')?.classList.add('active');
+  _showMapPanel(false);
+  _showTripsPanel(false);
+  _showAlbumsPanel(false);
+  Places.onTabActivated();
+});
 
 // ── Albums panel show/hide ─────────────────────────────────────────────────────────
 function _showAlbumsPanel(show) {
@@ -2253,3 +2503,9 @@ function showDiskWarning(gbFree, folder) {
 }
 
 init();
+// src/renderer/app.js — Fissick renderer
+// Vanilla JS. No frameworks. No build step.
+
+'use strict';
+
+// ── State ─────────────────────────────────────────────────────────────────────

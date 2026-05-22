@@ -142,3 +142,4 @@ const TripDetailMap = (() => {
 
 // Backward compat — old code called TripMaps.destroyAll()
 const TripMaps = { destroyAll: () => TripDetailMap.destroy() };
+// src/renderer/tripsMap.js
