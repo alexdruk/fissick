@@ -1106,6 +1106,10 @@ document.getElementById('ext-filter-select').addEventListener('change', async (e
   state.offset = 0;
   state.selectedPaths.clear();
 
+  // Ensure we're in photo list view, not trips/map
+  _showTripsPanel(false);
+  _showMapPanel(false);
+
   // Reset tab to ALL when a type is selected — otherwise the tab filter
   // combines with the type filter and produces confusing results
   if (state.ext && state.filter !== 'all') {
