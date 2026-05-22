@@ -354,6 +354,27 @@ async function run() {
       const allRows = db.prepare(`SELECT id, file_path, filename FROM photos WHERE thumbnail_path IS NULL`).all();
       const updateThumb = db.prepare(`UPDATE photos SET thumbnail_path = ? WHERE id = ?`);
 
+      // Optimisation 1: pre-scan thumbDir into a Set — one readdirSync instead of
+      // existsSync + statSync per photo (saves ~2 syscalls x N files on re-runs).
+      const existingThumbs = new Set(
+        fs.readdirSync(thumbDir).filter(f => f.endsWith('_t.jpg'))
+      );
+
+      // Optimisation 2: batch DB updates — flush every 200 rows in a single
+      // transaction instead of one individual SQLite write per photo.
+      const THUMB_FLUSH = 200;
+      let pendingThumbs = [];
+      const flushThumbs = db.transaction((rows) => {
+        for (const r of rows) updateThumb.run(r.path, r.id);
+      });
+      function queueThumb(thumbPath, id) {
+        pendingThumbs.push({ path: thumbPath, id });
+        if (pendingThumbs.length >= THUMB_FLUSH) {
+          flushThumbs(pendingThumbs);
+          pendingThumbs = [];
+        }
+      }
+
       let thumbDone = 0;
       const thumbTotal  = allRows.length;
       const thumbStartMs = Date.now();
@@ -368,11 +389,12 @@ async function run() {
 
         const ext       = photo.filename.split('.').pop()?.toLowerCase() || '';
         const safeBase  = photo.file_path.replace(/[/\\:]/g, '_').slice(-120);
-        const thumbPath = path.join(thumbDir, safeBase + '_t.jpg');
+        const thumbFile = safeBase + '_t.jpg';
+        const thumbPath = path.join(thumbDir, thumbFile);
 
-        // Skip if thumbnail already exists from a previous run
-        if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
-          updateThumb.run(thumbPath, photo.id);
+        // Skip if thumbnail already exists — O(1) Set lookup, no syscall
+        if (existingThumbs.has(thumbFile)) {
+          queueThumb(thumbPath, photo.id);
           thumbDone++;
           return;
         }
@@ -384,7 +406,7 @@ async function run() {
               .rotate()
               .jpeg({ quality: 72 })
               .toFile(thumbPath);
-            updateThumb.run(thumbPath, photo.id);
+            queueThumb(thumbPath, photo.id);
           } catch (err) {
             console.log(`[fossick] thumb failed (sharp) ${photo.filename}: ${err.message}`);
           }
@@ -400,11 +422,10 @@ async function run() {
                 photo.file_path,
                 '--out', thumbPath,
               ], { timeout: 20000 });
-              if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
-                updateThumb.run(thumbPath, photo.id);
-              } else {
-                console.log(`[fossick] thumb empty (sips) ${photo.filename}`);
-              }
+              try {
+                if (fs.statSync(thumbPath).size > 100) queueThumb(thumbPath, photo.id);
+                else console.log(`[fossick] thumb empty (sips) ${photo.filename}`);
+              } catch {}
             } catch (err) {
               console.log(`[fossick] thumb failed (sips) ${photo.filename}: ${err.message}`);
             }
@@ -417,10 +438,12 @@ async function run() {
               ], { timeout: 30000, env: { ...process.env, QL_PLUGIN_DISABLE_COMPRESSION: '1' } });
               const srcBasename = path.basename(photo.file_path);
               const qlOut = path.join(tmpOut, srcBasename + '.png');
-              if (fs.existsSync(qlOut) && fs.statSync(qlOut).size > 100) {
-                fs.renameSync(qlOut, thumbPath);
-                updateThumb.run(thumbPath, photo.id);
-              }
+              try {
+                if (fs.statSync(qlOut).size > 100) {
+                  fs.renameSync(qlOut, thumbPath);
+                  queueThumb(thumbPath, photo.id);
+                }
+              } catch {}
               try { fs.rmSync(tmpOut, { recursive: true }); } catch {}
             } catch (err) {
               console.log(`[fossick] thumb failed (qlmanage) ${photo.filename}: ${err.message}`);
@@ -435,11 +458,10 @@ async function run() {
                 '-update', '1',
                 '-y', thumbPath,
               ], { timeout: 20000 });
-              if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
-                updateThumb.run(thumbPath, photo.id);
-              } else {
-                console.log(`[fossick] thumb empty (ffmpeg) ${photo.filename}`);
-              }
+              try {
+                if (fs.statSync(thumbPath).size > 100) queueThumb(thumbPath, photo.id);
+                else console.log(`[fossick] thumb empty (ffmpeg) ${photo.filename}`);
+              } catch {}
             } catch (err) {
               console.log(`[fossick] thumb failed (ffmpeg) ${photo.filename}: ${err.message}`);
             }
@@ -465,6 +487,12 @@ async function run() {
           });
         }
       });
+
+      // Flush any remaining queued thumb DB updates
+      if (pendingThumbs.length > 0) {
+        flushThumbs(pendingThumbs);
+        pendingThumbs = [];
+      }
     }
 
     // ── Phase 5: Album population ─────────────────────────────────────────────
