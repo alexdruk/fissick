@@ -1562,6 +1562,10 @@ const Albums = (() => {
 
     _showAlbumsPanel(false);
 
+    // Hide date range bar — date filtering not supported in album view
+    const drb = document.getElementById('date-range-bar');
+    if (drb) drb.style.display = 'none';
+
     const bc     = document.getElementById('albums-breadcrumb');
     const nameEl = document.getElementById('albums-breadcrumb-name');
     if (bc)     bc.classList.add('visible');
@@ -1575,6 +1579,9 @@ const Albums = (() => {
     state.albumName = null;
     state.offset    = 0;
     state.selectedPaths.clear();
+    // Restore date range bar
+    const drb = document.getElementById('date-range-bar');
+    if (drb) drb.style.display = '';
     document.getElementById('albums-breadcrumb')?.classList.remove('visible');
     _showAlbumsPanel(true);
   }
