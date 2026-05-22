@@ -475,6 +475,22 @@ async function loadResults() {
     if (btnMap) btnMap.style.display = hasLoc ? '' : 'none';
   } catch {}
 
+  // Update photos page header subtitle
+  try {
+    const _stats0 = await window.tt.getStats();
+    const _subEl  = document.getElementById('photos-page-sub');
+    if (_subEl && _stats0) {
+      _subEl.textContent = `${(_stats0.total || 0).toLocaleString()} photos · ${(_stats0.fixed || 0).toLocaleString()} EXIF fixed`;
+    }
+  } catch {}
+
+  // Trips stat in sidebar
+  try {
+    const _tripsData = await window.tt.getTrips({ limit: 1 });
+    const _tripsStat = document.getElementById('sb-trips-stat');
+    if (_tripsStat && _tripsData?.total > 0) _tripsStat.textContent = _tripsData.total.toLocaleString();
+  } catch {}
+
   // Albums tab visibility
   try {
     const _albumsList = await window.tt.getAlbums();
@@ -622,18 +638,17 @@ function renderPhotoRow(photo) {
     thumbWrap.innerHTML = `<div class="photo-thumb-placeholder">📄</div>`;
   }
 
-  // Info cell
+  // Info cell — date is primary, filename secondary
   const dateStr = photo.date_ts
     ? new Date(photo.date_ts).toLocaleDateString('en', { year:'numeric', month:'short', day:'numeric' })
     : '—';
   const infoDiv = document.createElement('div');
   infoDiv.className = 'photo-info';
-  infoDiv.innerHTML = `
-    <div class="photo-name" title="${photo.filename}">${photo.filename}</div>
-    <div class="photo-meta">${dateStr}${photo.lat != null ? ` · lat ${photo.lat.toFixed(4)}, lng ${photo.lng.toFixed(4)}` : ''}</div>
-  `;
+  infoDiv.innerHTML =
+    `<div class="photo-date">${dateStr}</div>` +
+    `<div class="photo-name" title="${photo.filename}">${photo.filename}</div>`;
 
-  // Tag
+  // EXIF status pill
   let tagHtml;
   if (photo.date_ts == null) {
     tagHtml = `<span class="tag tag-none">No date</span>`;
@@ -649,11 +664,9 @@ function renderPhotoRow(photo) {
 
   // GPS badge
   const gpsSpan = document.createElement('span');
-  gpsSpan.innerHTML = photo.lat != null
-    ? `<span class="tag tag-gps">GPS</span>`
-    : '';
+  gpsSpan.innerHTML = photo.lat != null ? `<span class="tag tag-gps">GPS</span>` : '';
 
-  // Source label
+  // Sidecar source — dimmed mono text
   const sourceLabel = { 'sidecar': 'sidecar', 'filename': 'filename', 'none': 'no source' }[photo.date_source] || (photo.date_source || '—');
   const srcSpan = document.createElement('span');
   srcSpan.style.cssText = 'font-family:var(--mono);font-size:9px;color:var(--dim)';
@@ -1641,6 +1654,9 @@ const Places = (() => {
     if (!grid) return;
     const countEl = document.getElementById('places-list-count');
     if (countEl) countEl.textContent = _places.length.toLocaleString() + ' place' + (_places.length !== 1 ? 's' : '');
+    // Update trips page header sub when trips loads
+    const tripsSubEl = document.getElementById('trips-page-sub');
+    if (tripsSubEl) tripsSubEl.textContent = '';
     grid.innerHTML = '';
     for (const place of _places) grid.appendChild(_renderCard(place));
   }
@@ -1813,8 +1829,7 @@ const Albums = (() => {
 
     const countEl = document.getElementById('albums-count');
     if (countEl) {
-      countEl.textContent = _albums.length.toLocaleString() +
-        ' album' + (_albums.length !== 1 ? 's' : '');
+      countEl.textContent = _albums.length.toLocaleString() + ' album' + (_albums.length !== 1 ? 's' : '');
     }
 
     if (_albums.length === 0) {
