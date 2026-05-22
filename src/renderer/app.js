@@ -23,6 +23,7 @@ const state = {
   // ── Albums — set when viewing a specific album's photos
   albumId:   null,
   albumName: null,
+  albumSort: 'date-asc',
   // ── Trips ─────────────────────────────────────────────────────────────────────────────
   trips: {
     initialized: false,
@@ -465,9 +466,12 @@ async function loadPhotoPage(replace = false) {
     let result;
     if (state.albumId != null) {
       result = await window.tt.getAlbumPhotos({
-        albumId: state.albumId,
-        offset:  state.offset,
-        limit:   state.limit,
+        albumId:  state.albumId,
+        offset:   state.offset,
+        limit:    state.limit,
+        dateFrom: state.dateFrom,
+        dateTo:   state.dateTo,
+        sort:     state.albumSort,
       });
     } else {
       result = await window.tt.getPhotos({ offset: state.offset, limit: state.limit, filter: state.filter, dateFrom: state.dateFrom, dateTo: state.dateTo, ext: state.ext });
@@ -1586,9 +1590,12 @@ const Albums = (() => {
   }
 
   function reset() {
-    _albums        = [];
-    state.albumId  = null;
+    _albums         = [];
+    state.albumId   = null;
     state.albumName = null;
+    state.albumSort = 'date-asc';
+    const sel = document.getElementById('albums-sort-select');
+    if (sel) sel.value = 'date-asc';
     document.getElementById('albums-breadcrumb')?.classList.remove('visible');
   }
 
@@ -1602,6 +1609,14 @@ const Albums = (() => {
 })();
 
 document.getElementById('albums-breadcrumb-back')?.addEventListener('click', () => Albums.exitAlbumView());
+
+// Albums sort selector — only active when inside an album photo view
+document.getElementById('albums-sort-select')?.addEventListener('change', async (e) => {
+  if (state.albumId == null) return; // ignore when showing the grid
+  state.albumSort = e.target.value;
+  state.offset = 0;
+  await loadPhotoPage(true);
+});
 
 document.getElementById('sb-albums')?.addEventListener('click', async () => {
   if (state.view !== 'results') {

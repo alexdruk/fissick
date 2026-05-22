@@ -1503,17 +1503,33 @@ ipcMain.handle('db:get-albums', () => {
   `).all();
 });
 
-ipcMain.handle('db:get-album-photos', (_event, { albumId, offset = 0, limit = 60 } = {}) => {
+ipcMain.handle('db:get-album-photos', (_event, { albumId, offset = 0, limit = 60, dateFrom = null, dateTo = null, sort = 'date-asc' } = {}) => {
+  const SORT_MAP = {
+    'date-asc':      'photos.date_ts ASC  NULLS LAST, photos.filename ASC',
+    'date-desc':     'photos.date_ts DESC NULLS LAST, photos.filename ASC',
+    'filename-asc':  'photos.filename ASC',
+    'filename-desc': 'photos.filename DESC',
+  };
+  const order = SORT_MAP[sort] || SORT_MAP['date-asc'];
+
+  const clauses = ['photo_albums.album_id = ?'];
+  const params  = [albumId];
+  if (dateFrom != null) { clauses.push('photos.date_ts >= ?'); params.push(dateFrom); }
+  if (dateTo   != null) { clauses.push('photos.date_ts <= ?'); params.push(dateTo); }
+  const where = 'WHERE ' + clauses.join(' AND ');
+
   const photos = db.prepare(`
     SELECT photos.* FROM photos
     JOIN photo_albums ON photos.id = photo_albums.photo_id
-    WHERE photo_albums.album_id = ?
-    ORDER BY photos.date_ts ASC NULLS LAST, photos.filename ASC
+    ${where}
+    ORDER BY ${order}
     LIMIT ? OFFSET ?
-  `).all(albumId, limit, offset);
+  `).all(...params, limit, offset);
+
   const { n: total } = db.prepare(
-    `SELECT COUNT(*) as n FROM photo_albums WHERE album_id = ?`
-  ).get(albumId);
+    `SELECT COUNT(*) as n FROM photos JOIN photo_albums ON photos.id = photo_albums.photo_id ${where}`
+  ).get(...params);
+
   return { photos, total };
 });
 

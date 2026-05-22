@@ -870,7 +870,7 @@ html, body {
 #albums-panel.visible { display: flex; }
 
 .albums-panel-header {
-  padding: 12px 28px 10px;
+  padding: 10px 28px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   position: sticky;
@@ -880,6 +880,9 @@ html, body {
   font-size: 10px;
   color: var(--dim);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .albums-grid {
@@ -1598,6 +1601,15 @@ html, body {
       <div id="albums-panel">
         <div class="albums-panel-header">
           <span id="albums-count"></span>
+          <div class="trips-sort-wrap" style="margin-left:auto">
+            <label class="trips-sort-label" for="albums-sort-select">Sort</label>
+            <select id="albums-sort-select" class="trips-sort-select">
+              <option value="date-asc">Date — oldest first</option>
+              <option value="date-desc">Date — newest first</option>
+              <option value="filename-asc">Name — A to Z</option>
+              <option value="filename-desc">Name — Z to A</option>
+            </select>
+          </div>
         </div>
         <div id="albums-grid"></div>
       </div><!-- /albums-panel -->
