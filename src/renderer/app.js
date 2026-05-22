@@ -41,10 +41,14 @@ function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name)?.classList.add('active');
   document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  // Workflow step active state — results step stays active when in archive views
   const sbMap = { import: 'sb-import', processing: 'sb-process', results: 'sb-results' };
   document.getElementById(sbMap[name])?.classList.add('active');
   const labels = { import: 'Import', processing: 'Processing', results: 'Results' };
   document.getElementById('tb-phase').textContent = labels[name] || '';
+  // Show/hide the archive sidebar section
+  const sbArchive = document.getElementById('sb-archive');
+  if (sbArchive) sbArchive.style.display = (name === 'results') ? 'flex' : 'none';
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────────
@@ -52,6 +56,39 @@ document.getElementById('sb-import').addEventListener('click', () => showView('i
 document.getElementById('sb-results').addEventListener('click', async () => {
   await loadResults();
   showView('results');
+  // Activate Photos & Videos in archive sidebar
+  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  document.getElementById('sb-results').classList.add('active');
+  document.getElementById('sb-photos')?.classList.add('active');
+  _showMapPanel(false);
+  _showTripsPanel(false);
+  _showAlbumsPanel(false);
+  _showPlacesPanel(false);
+});
+document.getElementById('sb-photos')?.addEventListener('click', async () => {
+  if (state.view !== 'results') {
+    await loadResults();
+    showView('results');
+  }
+  // Switch to photo list, clear any special panels
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.filter-tab[data-filter="all"]')?.classList.add('active');
+  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  document.getElementById('sb-results').classList.add('active');
+  document.getElementById('sb-photos')?.classList.add('active');
+  _showMapPanel(false);
+  _showTripsPanel(false);
+  _showAlbumsPanel(false);
+  _showPlacesPanel(false);
+  // Clear any album view
+  if (state.albumId != null) {
+    state.albumId   = null;
+    state.albumName = null;
+    document.getElementById('albums-breadcrumb')?.classList.remove('visible');
+  }
+  state.filter = 'all';
+  state.offset = 0;
+  await loadPhotoPage(true);
 });
 document.getElementById('sb-trips').addEventListener('click', async () => {
   // Navigate to results if not already there, then activate trips tab
@@ -63,6 +100,7 @@ document.getElementById('sb-trips').addEventListener('click', async () => {
   document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
   document.querySelector('.filter-tab[data-filter="trips"]')?.classList.add('active');
   document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  document.getElementById('sb-results').classList.add('active');
   document.getElementById('sb-trips').classList.add('active');
   _showMapPanel(false);
   _showAlbumsPanel(false);
@@ -146,6 +184,8 @@ async function startProcessing() {
   const _sbPlaces0 = document.getElementById('sb-places');
   if (_sbPlaces0) _sbPlaces0.style.display = 'none';
   document.getElementById('tab-places')?.style && (document.getElementById('tab-places').style.display = 'none');
+  const _sbArch0 = document.getElementById('sb-archive');
+  if (_sbArch0) _sbArch0.style.display = 'none';
   _showMapPanel(false);
   _showTripsPanel(false);
   _showAlbumsPanel(false);
@@ -235,6 +275,7 @@ function handleProcessEvent(msg) {
           setTimeout(async () => {
             await loadResults();
             showView('results');
+            document.getElementById('sb-photos')?.classList.add('active');
           }, 1000);
         }
       }
@@ -391,6 +432,11 @@ async function loadResults() {
   _showMapPanel(false); // always start on photo list
   _showTripsPanel(false);
   _showAlbumsPanel(false);
+  _showPlacesPanel(false);
+  // Show archive sidebar and activate Photos & Videos by default
+  const _sbArchive = document.getElementById('sb-archive');
+  if (_sbArchive) _sbArchive.style.display = 'flex';
+  document.getElementById('sb-photos')?.classList.add('active');
   state.albumId    = null;
   state.albumName  = null;
   const _bcReset = document.getElementById('albums-breadcrumb');
@@ -686,6 +732,8 @@ document.getElementById('btn-back-results').addEventListener('click', async () =
   if (_sbPlacesSB) _sbPlacesSB.textContent = '—';
   state.placesComputed = false;
   _showPlacesPanel(false);
+  const _sbArchB = document.getElementById('sb-archive');
+  if (_sbArchB) _sbArchB.style.display = 'none';
   showView('import');
 });
 
