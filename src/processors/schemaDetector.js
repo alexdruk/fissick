@@ -21,11 +21,12 @@ const YOUTUBE_FOLDERS  = new Set([
  *
  * @param {string} takeoutDir - Root of the extracted Takeout archive
  * @returns {object} manifest
- * @returns {string|null} manifest.photos       - Path to Google Photos folder
- * @returns {string|null} manifest.recordsJson  - Path to Records.json (location history)
- * @returns {string|null} manifest.semanticDir  - Path to Semantic Location History folder
- * @returns {string|null} manifest.mboxPath     - Path to first .mbox file
- * @returns {string|null} manifest.youtubeHtml  - Path to watch-history.html
+ * @returns {string|null}   manifest.photos       - Path to Google Photos folder
+ * @returns {string|null}   manifest.recordsJson  - Path to Records.json (location history)
+ * @returns {string|null}   manifest.semanticDir  - Path to Semantic Location History folder
+ * @returns {string|null}   manifest.mboxPath     - Path to first .mbox file
+ * @returns {string|null}   manifest.youtubeHtml  - Path to watch-history.html
+ * @returns {Array}         manifest.albumDirs    - [{name, path}] album subdirs in Google Photos
  */
 function detectSchemas(takeoutDir) {
   const manifest = {
@@ -34,6 +35,7 @@ function detectSchemas(takeoutDir) {
     semanticDir:  null,
     mboxPath:     null,
     youtubeHtml:  null,
+    albumDirs:    [],
   };
 
   // Find the real Takeout root — Google Photos (and other schema folders) may be
@@ -86,10 +88,63 @@ function detectSchemas(takeoutDir) {
     }
   }
 
+  // Detect album subdirectories inside the Google Photos folder.
+  // Album folders are any subdirectory that is NOT a year folder.
+  // Year folders always end with a space + 4-digit year in every locale
+  // (e.g. "Photos from 2023", "Fotos von 2022").
+  if (manifest.photos) {
+    manifest.albumDirs = _detectAlbumDirs(manifest.photos);
+  }
+
   return manifest;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Scan the Google Photos root for album subdirectories.
+ * Album folders = subdirs that are NOT year folders and NOT hidden.
+ *
+ * @param {string} photosRoot - Path to the Google Photos folder
+ * @returns {Array<{name:string, path:string}>}
+ */
+// Google-generated year folder prefixes across known locales.
+// Format is always "<prefix><4-digit year>" — these names are never user-chosen.
+const YEAR_FOLDER_PREFIXES = [
+  'Photos from ',  // English
+  'Fotos von ',    // German
+  'Photos de ',    // French
+  'Fotos de ',     // Spanish / Portuguese
+  'Foto del ',     // Italian
+  'Foto van ',     // Dutch
+  'Zdjęcia z ',    // Polish
+];
+
+function _isYearFolder(name) {
+  // Must end in 4 digits
+  if (!/\d{4}$/.test(name)) return false;
+  for (const prefix of YEAR_FOLDER_PREFIXES) {
+    if (name.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+function _detectAlbumDirs(photosRoot) {
+  const albumDirs = [];
+  const entries = safeReaddir(photosRoot);
+  for (const entry of entries) {
+    // Skip hidden entries and macOS metadata folders
+    if (entry.startsWith('.') || entry === '__MACOSX') continue;
+    const fullPath = path.join(photosRoot, entry);
+    try {
+      if (!fs.statSync(fullPath).isDirectory()) continue;
+    } catch { continue; }
+    // Skip Google-generated year folders ("Photos from 2023", "Fotos von 2022", etc.)
+    if (_isYearFolder(entry)) continue;
+    albumDirs.push({ name: entry, path: fullPath });
+  }
+  return albumDirs;
+}
 
 /**
  * Recursively search for the directory that contains known Takeout schema folders.

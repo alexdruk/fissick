@@ -20,7 +20,10 @@ const state = {
   // selectedPaths: Set of file_path strings. Lives in memory, not in the DOM.
   // Updated by checkbox clicks, filter-tab bulk selection, and select-all.
   selectedPaths: new Set(),
-  // ── Trips ──────────────────────────────────────────────────────────────────
+  // ── Albums — set when viewing a specific album's photos
+  albumId:   null,
+  albumName: null,
+  // ── Trips ─────────────────────────────────────────────────────────────────────────────
   trips: {
     initialized: false,
     computed:    false,
@@ -60,6 +63,7 @@ document.getElementById('sb-trips').addEventListener('click', async () => {
   document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
   document.getElementById('sb-trips').classList.add('active');
   _showMapPanel(false);
+  _showAlbumsPanel(false);
   _showTripsPanel(true);
   Trips.onTabActivated();
 });
@@ -127,14 +131,20 @@ async function startProcessing() {
   document.getElementById('results-stats-row').innerHTML = '';
   showTrialBanner(false);
 
-  // Hide Map + Trips tabs — will re-appear if location data is found
-  const mapTab   = document.getElementById('tab-map');
-  const tripsTab = document.getElementById('tab-trips');
-  if (mapTab)   mapTab.style.display   = 'none';
-  if (tripsTab) tripsTab.style.display = 'none';
+  // Hide Map + Trips + Albums tabs -- will re-appear when data is found
+  const mapTab    = document.getElementById('tab-map');
+  const tripsTab  = document.getElementById('tab-trips');
+  const albumsTab = document.getElementById('tab-albums');
+  if (mapTab)    mapTab.style.display    = 'none';
+  if (tripsTab)  tripsTab.style.display  = 'none';
+  if (albumsTab) albumsTab.style.display = 'none';
   document.getElementById('sb-trips').style.display = 'none';
+  const _sbAlbums0 = document.getElementById('sb-albums');
+  if (_sbAlbums0) _sbAlbums0.style.display = 'none';
   _showMapPanel(false);
   _showTripsPanel(false);
+  _showAlbumsPanel(false);
+  Albums.reset();
   Trips.reset();
 
   resetProcessingUI();
@@ -277,6 +287,19 @@ function handleProcessEvent(msg) {
       }
       break;
 
+    case 'albums-summary': {
+      if (msg.total > 0) {
+        const _tabA = document.getElementById('tab-albums');
+        const _sbA  = document.getElementById('sb-albums');
+        const _sbAS = document.getElementById('sb-albums-stat');
+        if (_tabA) _tabA.style.display = '';
+        if (_sbA)  _sbA.style.display  = '';
+        if (_sbAS) _sbAS.textContent   = msg.total.toLocaleString();
+      }
+      logMsg(`Albums: ${msg.total} album(s) populated.`, 'ok');
+      break;
+    }
+
     case 'trial-limit-hit':
       handleTrialLimitHit();
       break;
@@ -359,6 +382,12 @@ async function loadResults() {
   if (firstTab) firstTab.classList.add('active');
 
   _showMapPanel(false); // always start on photo list
+  _showTripsPanel(false);
+  _showAlbumsPanel(false);
+  state.albumId    = null;
+  state.albumName  = null;
+  const _bcReset = document.getElementById('albums-breadcrumb');
+  if (_bcReset) _bcReset.classList.remove('visible');
   state.selectedPaths.clear();
   state.filteredTotal = 0;
   await refreshLicenceStatus();
@@ -386,11 +415,23 @@ async function loadResults() {
     const sbLoc = document.getElementById('sb-locations');
     if (sbLoc) sbLoc.textContent = hasLoc ? locStats.total.toLocaleString() : '—';
 
-    // Location export buttons — only meaningful when there is location data
+    // Location export buttons -- only meaningful when there is location data
     const btnGpx = document.getElementById('btn-export-gpx');
     const btnMap = document.getElementById('btn-export-map-html');
     if (btnGpx) btnGpx.style.display = hasLoc ? '' : 'none';
     if (btnMap) btnMap.style.display = hasLoc ? '' : 'none';
+  } catch {}
+
+  // Albums tab visibility
+  try {
+    const _albumsList = await window.tt.getAlbums();
+    const _hasAlbums  = _albumsList && _albumsList.length > 0;
+    const _tabAlbums  = document.getElementById('tab-albums');
+    const _sbAlbumsN  = document.getElementById('sb-albums');
+    const _sbAlbumsS  = document.getElementById('sb-albums-stat');
+    if (_tabAlbums) _tabAlbums.style.display = _hasAlbums ? '' : 'none';
+    if (_sbAlbumsN) _sbAlbumsN.style.display = _hasAlbums ? '' : 'none';
+    if (_sbAlbumsS) _sbAlbumsS.textContent   = _hasAlbums ? _albumsList.length.toLocaleString() : '—';
   } catch {}
 }
 
@@ -421,7 +462,16 @@ async function refreshStats() {
 
 async function loadPhotoPage(replace = false) {
   try {
-    const result = await window.tt.getPhotos({ offset: state.offset, limit: state.limit, filter: state.filter, dateFrom: state.dateFrom, dateTo: state.dateTo, ext: state.ext });
+    let result;
+    if (state.albumId != null) {
+      result = await window.tt.getAlbumPhotos({
+        albumId: state.albumId,
+        offset:  state.offset,
+        limit:   state.limit,
+      });
+    } else {
+      result = await window.tt.getPhotos({ offset: state.offset, limit: state.limit, filter: state.filter, dateFrom: state.dateFrom, dateTo: state.dateTo, ext: state.ext });
+    }
     if (!result) return;
 
     const { photos = [], total = 0 } = result;
@@ -570,10 +620,13 @@ document.getElementById('btn-back-results').addEventListener('click', async () =
 
   await window.tt.resetData();
   await window.tt.resetTrips();
-  state.source = {};
-  state.dateFrom = null;
-  state.dateTo   = null;
-  state.ext      = null;
+  Albums.reset();
+  state.source    = {};
+  state.albumId   = null;
+  state.albumName = null;
+  state.dateFrom  = null;
+  state.dateTo    = null;
+  state.ext       = null;
   const extSel = document.getElementById('ext-filter-select');
   if (extSel) extSel.value = '';
   const fromMonthSelBack = document.getElementById('dr-from-month');
@@ -589,11 +642,17 @@ document.getElementById('btn-back-results').addEventListener('click', async () =
   _showMapPanel(false);
   _showTripsPanel(false);
   Trips.reset();
-  const mapTab   = document.getElementById('tab-map');
-  const tripsTab = document.getElementById('tab-trips');
-  if (mapTab)   mapTab.style.display   = 'none';
-  if (tripsTab) tripsTab.style.display = 'none';
+  const mapTab     = document.getElementById('tab-map');
+  const tripsTab   = document.getElementById('tab-trips');
+  const albumsTabB = document.getElementById('tab-albums');
+  if (mapTab)     mapTab.style.display     = 'none';
+  if (tripsTab)   tripsTab.style.display   = 'none';
+  if (albumsTabB) albumsTabB.style.display = 'none';
   document.getElementById('sb-trips').style.display = 'none';
+  const _sbAlbumsB  = document.getElementById('sb-albums');
+  const _sbAlbumsSB = document.getElementById('sb-albums-stat');
+  if (_sbAlbumsB)  _sbAlbumsB.style.display  = 'none';
+  if (_sbAlbumsSB) _sbAlbumsSB.textContent   = '—';
   showView('import');
 });
 
@@ -605,17 +664,42 @@ document.querySelectorAll('.filter-tab').forEach(tab => {
 
     if (tab.dataset.filter === 'map') {
       _showTripsPanel(false);
+      _showAlbumsPanel(false);
       _showMapPanel(true);
       LocationMap.onTabActivated();
     } else if (tab.dataset.filter === 'trips') {
       _showMapPanel(false);
+      _showAlbumsPanel(false);
       _showTripsPanel(true);
       document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
       document.getElementById('sb-trips').classList.add('active');
       Trips.onTabActivated();
+    } else if (tab.dataset.filter === 'albums') {
+      _showMapPanel(false);
+      _showTripsPanel(false);
+      document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+      document.getElementById('sb-albums')?.classList.add('active');
+      state.albumId   = null;
+      state.albumName = null;
+      const _bcAT = document.getElementById('albums-breadcrumb');
+      if (_bcAT) _bcAT.classList.remove('visible');
+      Albums.onTabActivated();
     } else {
       _showMapPanel(false);
       _showTripsPanel(false);
+      _showAlbumsPanel(false);
+      // Clear album view when switching to a standard filter tab
+      if (state.albumId != null) {
+        state.albumId   = null;
+        state.albumName = null;
+        const _bcElse = document.getElementById('albums-breadcrumb');
+        if (_bcElse) _bcElse.classList.remove('visible');
+        // Restore selection UI that may have been hidden in album view
+        const _selBar2    = document.getElementById('select-bar');
+        const _exportBar2 = document.getElementById('export-bar');
+        if (_selBar2)    _selBar2.style.display    = '';
+        if (_exportBar2) _exportBar2.style.display = '';
+      }
       document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
       document.getElementById('sb-results').classList.add('active');
       const newFilter = tab.dataset.filter;
@@ -1367,6 +1451,174 @@ function _showTripsPanel(show) {
     if (thumbGenBar)  thumbGenBar.style.display   = '';
   }
 }
+
+// ── Albums panel show/hide ─────────────────────────────────────────────────────────
+function _showAlbumsPanel(show) {
+  const viewResults  = document.getElementById('view-results');
+  const photoList    = document.getElementById('photo-list');
+  const listFooter   = viewResults?.querySelector('.list-footer');
+  const trialBanner  = document.getElementById('trial-banner');
+  const albumsPanel  = document.getElementById('albums-panel');
+  const exportBar    = document.getElementById('export-bar');
+  const dateRangeBar = document.getElementById('date-range-bar');
+  const thumbGenBar  = document.getElementById('thumb-gen-bar');
+  const selBar       = document.getElementById('select-bar');
+  if (!viewResults || !albumsPanel) return;
+
+  if (show) {
+    [photoList, listFooter, trialBanner, selBar, exportBar, dateRangeBar, thumbGenBar]
+      .forEach(el => { if (el) el.style.display = 'none'; });
+    document.getElementById('albums-breadcrumb')?.classList.remove('visible');
+    viewResults.style.overflow = 'hidden';
+    const usedH = (viewResults.querySelector('.results-header')?.offsetHeight || 0)
+                + (viewResults.querySelector('.filter-bar')?.offsetHeight || 0);
+    albumsPanel.style.height = (viewResults.clientHeight - usedH) + 'px';
+    albumsPanel.classList.add('visible');
+  } else {
+    albumsPanel.classList.remove('visible');
+    viewResults.style.overflow = '';
+    if (photoList)    photoList.style.display    = '';
+    if (listFooter)   listFooter.style.display   = '';
+    if (selBar)       selBar.style.display        = '';
+    if (exportBar)    exportBar.style.display     = '';
+    if (dateRangeBar) dateRangeBar.style.display  = '';
+    if (thumbGenBar)  thumbGenBar.style.display   = '';
+  }
+}
+
+// ── Albums module ──────────────────────────────────────────────────────────────────────
+const Albums = (() => {
+  'use strict';
+
+  let _albums = [];
+
+  async function onTabActivated() {
+    state.albumId   = null;
+    state.albumName = null;
+    document.getElementById('albums-breadcrumb')?.classList.remove('visible');
+    _showAlbumsPanel(true);
+    await _loadAndRender();
+  }
+
+  async function _loadAndRender() {
+    const grid = document.getElementById('albums-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    _albums = await window.tt.getAlbums();
+
+    const countEl = document.getElementById('albums-count');
+    if (countEl) {
+      countEl.textContent = _albums.length.toLocaleString() +
+        ' album' + (_albums.length !== 1 ? 's' : '');
+    }
+
+    if (_albums.length === 0) {
+      grid.innerHTML =
+        '<div style="padding:40px 28px;color:var(--dim);font-size:13px;line-height:1.9">' +
+        'No albums found in this archive.<br>' +
+        '<span style="font-family:var(--mono);font-size:10px">Albums appear when your Takeout ' +
+        'includes named album folders inside Google Photos.</span></div>';
+      return;
+    }
+
+    const gridWrap = document.createElement('div');
+    gridWrap.className = 'albums-grid';
+    for (const album of _albums) gridWrap.appendChild(_renderCard(album));
+    grid.appendChild(gridWrap);
+  }
+
+  function _renderCard(album) {
+    const card = document.createElement('div');
+    card.className = 'album-card';
+
+    const thumbSrc = album.cover_thumbnail || album.cover_file_path;
+    const thumbHtml = thumbSrc
+      ? '<img class="album-thumb" src="local://' + thumbSrc + '" alt="" loading="lazy"' +
+        ' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+        '<div class="album-thumb-placeholder" style="display:none">&#128193;</div>'
+      : '<div class="album-thumb-placeholder">&#128193;</div>';
+
+    const infoHtml =
+      '<div class="album-info">' +
+      '<div class="album-name" title="' + _aesc(album.name) + '">' + _aesc(album.name) + '</div>' +
+      '<div class="album-count">' + album.photo_count.toLocaleString() +
+        ' photo' + (album.photo_count !== 1 ? 's' : '') + '</div>' +
+      '</div>';
+
+    card.innerHTML = thumbHtml + infoHtml;
+    card.addEventListener('click', () => _enterAlbumView(album));
+    return card;
+  }
+
+  async function _enterAlbumView(album) {
+    state.albumId   = album.id;
+    state.albumName = album.name;
+    state.offset    = 0;
+    state.filter    = 'all';
+    state.selectedPaths.clear();
+
+    _showAlbumsPanel(false);
+
+    const bc     = document.getElementById('albums-breadcrumb');
+    const nameEl = document.getElementById('albums-breadcrumb-name');
+    if (bc)     bc.classList.add('visible');
+    if (nameEl) nameEl.textContent = album.name;
+
+    const selBar    = document.getElementById('select-bar');
+    const exportBar = document.getElementById('export-bar');
+    if (selBar)    selBar.style.display    = 'none';
+    if (exportBar) exportBar.style.display = 'none';
+
+    await loadPhotoPage(true);
+  }
+
+  function exitAlbumView() {
+    state.albumId   = null;
+    state.albumName = null;
+    state.offset    = 0;
+    document.getElementById('albums-breadcrumb')?.classList.remove('visible');
+    const selBar    = document.getElementById('select-bar');
+    const exportBar = document.getElementById('export-bar');
+    if (selBar)    selBar.style.display    = '';
+    if (exportBar) exportBar.style.display = '';
+    _showAlbumsPanel(true);
+  }
+
+  function reset() {
+    _albums        = [];
+    state.albumId  = null;
+    state.albumName = null;
+    document.getElementById('albums-breadcrumb')?.classList.remove('visible');
+  }
+
+  function _aesc(s) {
+    return String(s || '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  return { onTabActivated, exitAlbumView, reset };
+})();
+
+document.getElementById('albums-breadcrumb-back')?.addEventListener('click', () => Albums.exitAlbumView());
+
+document.getElementById('sb-albums')?.addEventListener('click', async () => {
+  if (state.view !== 'results') {
+    await loadResults();
+    showView('results');
+  }
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.filter-tab[data-filter="albums"]')?.classList.add('active');
+  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  document.getElementById('sb-albums')?.classList.add('active');
+  _showMapPanel(false);
+  _showTripsPanel(false);
+  state.albumId   = null;
+  state.albumName = null;
+  document.getElementById('albums-breadcrumb')?.classList.remove('visible');
+  Albums.onTabActivated();
+});
 
 // ── Trips module ───────────────────────────────────────────────────────────────
 const Trips = (() => {

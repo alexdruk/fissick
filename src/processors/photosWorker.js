@@ -466,7 +466,71 @@ async function run() {
       });
     }
 
-    // ── Phase 5: Done ────────────────────────────────────────────────────────
+    // ── Phase 5: Album population ─────────────────────────────────────────────
+    // Album folders are subdirs of Google Photos that are NOT year folders.
+    // Each album dir contains copies of year-folder photos; we match by filename.
+    if (manifest.albumDirs && manifest.albumDirs.length > 0) {
+      status('albums', `Scanning ${manifest.albumDirs.length} album folder(s) for memberships…`);
+
+      const ALBUM_MEDIA_EXTS = new Set([
+        'jpg','jpeg','png','gif','webp','heic','heif','bmp','tiff','tif','avif',
+        'mov','mp4','m4v','avi','mkv','3gp',
+      ]);
+
+      const stmtInsertAlbum   = db.prepare(`INSERT INTO albums (name, photo_count, cover_photo_id) VALUES (?, 0, NULL)`);
+      const stmtInsertPA      = db.prepare(`INSERT OR IGNORE INTO photo_albums (photo_id, album_id) VALUES (?, ?)`);
+      const stmtUpdateAlbum   = db.prepare(`UPDATE albums SET photo_count = ?, cover_photo_id = ? WHERE id = ?`);
+      const stmtDeleteAlbum   = db.prepare(`DELETE FROM albums WHERE id = ?`);
+      const stmtGetByFilename = db.prepare(`SELECT id FROM photos WHERE filename = ? LIMIT 1`);
+      const stmtGetCover      = db.prepare(`
+        SELECT p.id FROM photos p
+        JOIN photo_albums pa ON p.id = pa.photo_id
+        WHERE pa.album_id = ?
+        ORDER BY p.date_ts ASC NULLS LAST LIMIT 1
+      `);
+
+      let albumsCreated = 0;
+
+      for (const albumDir of manifest.albumDirs) {
+        let dirEntries;
+        try { dirEntries = fs.readdirSync(albumDir.path); } catch { continue; }
+
+        const mediaFilenames = dirEntries.filter(f => {
+          const dot = f.lastIndexOf('.');
+          if (dot < 0) return false;
+          return ALBUM_MEDIA_EXTS.has(f.slice(dot + 1).toLowerCase());
+        });
+
+        if (mediaFilenames.length === 0) continue;
+
+        const albumId = stmtInsertAlbum.run(albumDir.name).lastInsertRowid;
+
+        const matchedCount = db.transaction((names) => {
+          let count = 0;
+          for (const filename of names) {
+            const row = stmtGetByFilename.get(filename);
+            if (row) {
+              stmtInsertPA.run(row.id, albumId);
+              count++;
+            }
+          }
+          return count;
+        })(mediaFilenames);
+
+        if (matchedCount > 0) {
+          const cover = stmtGetCover.get(albumId);
+          stmtUpdateAlbum.run(matchedCount, cover?.id ?? null, albumId);
+          albumsCreated++;
+        } else {
+          stmtDeleteAlbum.run(albumId);
+        }
+      }
+
+      status('albums', `Albums populated: ${albumsCreated.toLocaleString()} album(s).`);
+      send('albums-summary', { total: albumsCreated });
+    }
+
+    // ── Phase 6: Done ────────────────────────────────────────────────────────
     status('done', `Done — fixed ${fixed.toLocaleString()} of ${uniqueMedia.length.toLocaleString()} photos.`);
     send('summary', { processed, fixed, matched, failed });
 

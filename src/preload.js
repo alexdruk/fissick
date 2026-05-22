@@ -75,6 +75,10 @@ contextBridge.exposeInMainWorld('tt', {
   setWorkingFolder:    (opts)  => ipcRenderer.invoke('settings:set-working-folder', opts),
   browseWorkingFolder: ()      => ipcRenderer.invoke('settings:browse-working-folder'),
 
+  // ── Albums ─────────────────────────────────────────────────────────────────────
+  getAlbums:      ()     => ipcRenderer.invoke('db:get-albums'),
+  getAlbumPhotos: (opts) => ipcRenderer.invoke('db:get-album-photos', opts),
+
   // ── Trips ───────────────────────────────────────────────────────────────────
   getClusters:      ()     => ipcRenderer.invoke('trips:get-clusters'),
   getAllClusters:   ()     => ipcRenderer.invoke('trips:get-all-clusters'),

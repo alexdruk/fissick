@@ -331,6 +331,22 @@ app.whenReady().then(() => {
     CREATE INDEX IF NOT EXISTS idx_trips_start ON trips(start_ts);
   `);
   try { db.exec('ALTER TABLE photos ADD COLUMN trip_id INTEGER REFERENCES trips(id)'); } catch {}
+  // Albums feature tables
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS albums (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      name           TEXT NOT NULL,
+      photo_count    INTEGER DEFAULT 0,
+      cover_photo_id INTEGER REFERENCES photos(id)
+    );
+    CREATE TABLE IF NOT EXISTS photo_albums (
+      photo_id INTEGER NOT NULL REFERENCES photos(id),
+      album_id INTEGER NOT NULL REFERENCES albums(id),
+      PRIMARY KEY (photo_id, album_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_photo_albums_album ON photo_albums(album_id);
+    CREATE INDEX IF NOT EXISTS idx_photo_albums_photo ON photo_albums(photo_id);
+  `);
   // Migrations for new trip fields
   try { db.exec('ALTER TABLE trips ADD COLUMN country_code TEXT'); } catch {}
   try { db.exec('ALTER TABLE trips ADD COLUMN country TEXT'); } catch {}
@@ -468,6 +484,8 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
   locationWorkerSpawned = false;
 
   // Wipe previous run's data and mark as incomplete
+  db.exec('DELETE FROM photo_albums');
+  db.exec('DELETE FROM albums');
   db.exec('DELETE FROM photos');
   db.exec('DELETE FROM locations');
   db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_complete', '0')").run();
@@ -704,6 +722,8 @@ ipcMain.handle('db:has-data', () => {
 
 // Reset all data (for re-processing)
 ipcMain.handle('db:reset', () => {
+  db.exec('DELETE FROM photo_albums');
+  db.exec('DELETE FROM albums');
   db.exec('DELETE FROM photos');
   db.exec('DELETE FROM locations');
   return { ok: true };
@@ -1469,6 +1489,33 @@ function _dateStamp() {
 
 // ── Licence ───────────────────────────────────────────────────────────────────
 const TRIAL_LIMIT = 100;
+
+// ── Albums ───────────────────────────────────────────────────────────────────────
+
+ipcMain.handle('db:get-albums', () => {
+  return db.prepare(`
+    SELECT a.id, a.name, a.photo_count,
+           p.thumbnail_path AS cover_thumbnail,
+           p.file_path      AS cover_file_path
+    FROM albums a
+    LEFT JOIN photos p ON a.cover_photo_id = p.id
+    ORDER BY a.name ASC
+  `).all();
+});
+
+ipcMain.handle('db:get-album-photos', (_event, { albumId, offset = 0, limit = 60 } = {}) => {
+  const photos = db.prepare(`
+    SELECT photos.* FROM photos
+    JOIN photo_albums ON photos.id = photo_albums.photo_id
+    WHERE photo_albums.album_id = ?
+    ORDER BY photos.date_ts ASC NULLS LAST, photos.filename ASC
+    LIMIT ? OFFSET ?
+  `).all(albumId, limit, offset);
+  const { n: total } = db.prepare(
+    `SELECT COUNT(*) as n FROM photo_albums WHERE album_id = ?`
+  ).get(albumId);
+  return { photos, total };
+});
 
 // ── Trips ──────────────────────────────────────────────────────────────────────
 

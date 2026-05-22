@@ -857,6 +857,120 @@ html, body {
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 
 /* ════════════════════════════════════════
+   ALBUMS PANEL
+
+/* ════════════════════════════════════════
+   ALBUMS PANEL
+════════════════════════════════════════ */
+#albums-panel {
+  display: none;
+  flex-direction: column;
+  overflow-y: auto;
+}
+#albums-panel.visible { display: flex; }
+
+.albums-panel-header {
+  padding: 12px 28px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+
+.albums-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+  padding: 24px 28px 48px;
+}
+
+.album-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color .1s, box-shadow .1s;
+  user-select: none;
+}
+.album-card:hover {
+  border-color: var(--border2);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.album-thumb {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  background: var(--panel2);
+  display: block;
+}
+.album-thumb-placeholder {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--panel2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+}
+.album-info {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+.album-name {
+  font-family: var(--serif);
+  font-size: 13px;
+  color: var(--ink);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.album-count {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--dim);
+}
+
+/* Albums breadcrumb — shown above the photo list when viewing a specific album */
+#albums-breadcrumb {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 28px;
+  background: var(--acc-lt);
+  border-bottom: 1px solid var(--acc-border);
+  font-size: 12.5px;
+  color: var(--mu);
+  flex-shrink: 0;
+}
+#albums-breadcrumb.visible { display: flex; }
+#albums-breadcrumb-back {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--acc);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  letter-spacing: .02em;
+}
+#albums-breadcrumb-back:hover { text-decoration: underline; }
+#albums-breadcrumb-name {
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+}
+
+/* ════════════════════════════════════════
    TRIPS PANEL
 ════════════════════════════════════════ */
 #trips-panel {
@@ -1180,8 +1294,10 @@ html, body {
     <div class="sb-stat-row"><span class="sb-stat-label">No sidecar</span><span class="sb-stat-value amber" id="sb-unmatched">—</span></div>
     <div class="sb-stat-row"><span class="sb-stat-label">With GPS</span><span class="sb-stat-value" id="sb-gps">—</span></div>
     <div class="sb-stat-row"><span class="sb-stat-label">Locations</span><span class="sb-stat-value blue" id="sb-locations">—</span></div>
+    <div class="sb-stat-row"><span class="sb-stat-label">Albums</span><span class="sb-stat-value" id="sb-albums-stat">—</span></div>
     <div class="sb-divider"></div>
     <div class="sb-item" id="sb-trips" style="display:none"><span>🌍</span> Trips</div>
+    <div class="sb-item" id="sb-albums" style="display:none"><span>📚</span> Albums</div>
   </div>
 
   <!-- Main area: exactly fills the space right of sidebar, below titlebar -->
@@ -1339,6 +1455,7 @@ html, body {
         </select>
         <div class="filter-tab" data-filter="map" id="tab-map" style="display:none">🗺 Map</div>
         <div class="filter-tab" data-filter="trips" id="tab-trips" style="display:none">🌍 Trips</div>
+        <div class="filter-tab" data-filter="albums" id="tab-albums" style="display:none">📚 Albums</div>
       </div>
 
       <!-- Date range filter row -->
@@ -1375,6 +1492,13 @@ html, body {
       <div id="select-bar">
         <div id="select-all-cb" role="checkbox" aria-label="Select all"></div>
         <span id="selection-label"><b id="sel-count">0</b> selected</span>
+      </div>
+
+      <!-- Albums breadcrumb — visible when viewing a specific album -->
+      <div id="albums-breadcrumb">
+        <button id="albums-breadcrumb-back">← All albums</button>
+        <span style="color:var(--acc-border)">·</span>
+        <span id="albums-breadcrumb-name"></span>
       </div>
 
       <!-- Photo list (hidden when map tab is active) -->
@@ -1469,6 +1593,14 @@ html, body {
         </div>
 
       </div><!-- /trips-panel -->
+
+      <!-- Albums panel -->
+      <div id="albums-panel">
+        <div class="albums-panel-header">
+          <span id="albums-count"></span>
+        </div>
+        <div id="albums-grid"></div>
+      </div><!-- /albums-panel -->
 
     </div><!-- /view-results -->
 
