@@ -95,6 +95,7 @@ async function withPool(items, concurrency, fn) {
 async function run() {
   const { zipPaths, extractedFolder, tempDir, dbPath, trialLimit, thumbDir, controlSab } = workerData;
   const isLimited = trialLimit != null;
+  status('starting', 'Starting up…');
   if (isLimited) status('processing', `Trial mode: EXIF writing limited to first ${trialLimit} photos.`);
 
   // Control byte: 0=run, 1=paused, 2=abort

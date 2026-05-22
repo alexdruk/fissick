@@ -133,8 +133,8 @@ function _detectAlbumDirs(photosRoot) {
   const albumDirs = [];
   const entries = safeReaddir(photosRoot);
   for (const entry of entries) {
-    // Skip hidden entries and macOS metadata folders
-    if (entry.startsWith('.') || entry === '__MACOSX') continue;
+    // Skip hidden entries, macOS metadata folders, and Google's Trash folder
+    if (entry.startsWith('.') || entry === '__MACOSX' || entry === 'Trash') continue;
     const fullPath = path.join(photosRoot, entry);
     try {
       if (!fs.statSync(fullPath).isDirectory()) continue;
