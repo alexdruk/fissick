@@ -1503,15 +1503,7 @@ ipcMain.handle('db:get-albums', () => {
   `).all();
 });
 
-ipcMain.handle('db:get-album-photos', (_event, { albumId, offset = 0, limit = 60, dateFrom = null, dateTo = null, sort = 'date-asc' } = {}) => {
-  const SORT_MAP = {
-    'date-asc':      'photos.date_ts ASC  NULLS LAST, photos.filename ASC',
-    'date-desc':     'photos.date_ts DESC NULLS LAST, photos.filename ASC',
-    'filename-asc':  'photos.filename ASC',
-    'filename-desc': 'photos.filename DESC',
-  };
-  const order = SORT_MAP[sort] || SORT_MAP['date-asc'];
-
+ipcMain.handle('db:get-album-photos', (_event, { albumId, offset = 0, limit = 60, dateFrom = null, dateTo = null } = {}) => {
   const clauses = ['photo_albums.album_id = ?'];
   const params  = [albumId];
   if (dateFrom != null) { clauses.push('photos.date_ts >= ?'); params.push(dateFrom); }
@@ -1522,7 +1514,7 @@ ipcMain.handle('db:get-album-photos', (_event, { albumId, offset = 0, limit = 60
     SELECT photos.* FROM photos
     JOIN photo_albums ON photos.id = photo_albums.photo_id
     ${where}
-    ORDER BY ${order}
+    ORDER BY photos.date_ts ASC NULLS LAST, photos.filename ASC
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset);
 
