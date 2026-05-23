@@ -6,6 +6,6 @@
     "test:smoke": "playwright test --config=playwright.config.js tests/smoke.spec.js"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0"
+    "@playwright/test": "^1.52.0"
   }
 }
