@@ -1,42 +1,23 @@
 const { _electron: electron } = require('@playwright/test');
 const path = require('path');
-const fs   = require('fs');
 
-// Walk up from this file until we find package.json with "electron" in dependencies
-function findProjectRoot() {
-  let dir = __dirname;
-  for (let i = 0; i < 6; i++) {
-    dir = path.dirname(dir);
-    const pkg = path.join(dir, 'package.json');
-    if (fs.existsSync(pkg)) {
-      try {
-        const p = JSON.parse(fs.readFileSync(pkg, 'utf8'));
-        const deps = { ...p.dependencies, ...p.devDependencies };
-        if (deps.electron) return dir;
-      } catch {}
-    }
-  }
-  throw new Error('Could not find Fossick project root (no package.json with electron dep)');
-}
-
-const APP_ROOT = findProjectRoot();
+const APP_ROOT = path.resolve(__dirname, '..', '..');
 
 async function launchApp() {
-  // Get electron binary path using the project's own electron module
-  const electronModule = path.join(APP_ROOT, 'node_modules', 'electron');
-  const electronPath   = require(electronModule);
+  const electronPath = require(path.join(APP_ROOT, 'node_modules', 'electron'));
 
   const app = await electron.launch({
     executablePath: electronPath,
     args: [path.join(APP_ROOT, 'src/main.js')],
-    env: {
-      ...process.env,
-      FOSSICK_DEV: '1',
-      NODE_ENV:    'test',
-    },
+    timeout: 60_000,
+    env: { ...process.env, FOSSICK_DEV: '1' },
   });
 
-  const page = await app.firstWindow();
+  // Log any Electron process output so we can see crash reasons
+  app.process().stdout?.on('data', d => process.stdout.write('[electron] ' + d));
+  app.process().stderr?.on('data', d => process.stderr.write('[electron:err] ' + d));
+
+  const page = await app.firstWindow({ timeout: 60_000 });
   await page.waitForLoadState('domcontentloaded');
 
   const consoleErrors = [];
