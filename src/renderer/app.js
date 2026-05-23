@@ -2212,7 +2212,7 @@ const Trips = (() => {
     }
 
     for (const trip of filtered) list.appendChild(_renderTripCard(trip));
-    requestAnimationFrame(() => { filtered.forEach(t => TripMaps.observe(`trip-map-${t.id}`)); });
+    // TripMaps.observe removed — mini-map thumbnails not implemented
   }
 
   function _renderTripCard(trip) {
