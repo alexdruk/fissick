@@ -88,9 +88,13 @@ function _forceResetResultsView() {
 document.getElementById('sb-import').addEventListener('click', () => showView('import'));
 document.getElementById('sb-results').addEventListener('click', async () => {
   try {
+    console.log('[sb-results] step 1: resetting view');
     _forceResetResultsView();
+    console.log('[sb-results] step 2: calling loadResults');
     await loadResults();
+    console.log('[sb-results] step 3: calling showView results');
     showView('results');
+    console.log('[sb-results] step 4: done');
     document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
     document.getElementById('sb-results').classList.add('active');
     document.getElementById('sb-photos')?.classList.add('active');
