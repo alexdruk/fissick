@@ -104,6 +104,7 @@ document.getElementById('sb-trips').addEventListener('click', async () => {
   document.getElementById('sb-trips').classList.add('active');
   _showMapPanel(false);
   _showAlbumsPanel(false);
+  _showPlacesPanel(false);
   _showTripsPanel(true);
   Trips.onTabActivated();
 });
@@ -1534,18 +1535,26 @@ function _showTripsPanel(show) {
   const selBar       = document.getElementById('select-bar');
   if (!viewResults || !tripsPanel) return;
 
+  const photosHdr = document.getElementById('photos-page-header');
+  const filterBar = viewResults?.querySelector('.filter-bar');
+  const resultsHdr = viewResults?.querySelector('.results-header');
+
   if (show) {
-    // Hide photo-specific elements but keep filter-bar visible so tabs + type selector work
     [photoList, listFooter, trialBanner, selBar, exportBar, dateRangeBar, thumbGenBar]
       .forEach(el => { if (el) el.style.display = 'none'; });
+    if (photosHdr)  photosHdr.style.display  = 'none';
+    if (filterBar)  filterBar.style.display  = 'none';
+    if (resultsHdr) resultsHdr.style.display = 'none';
     viewResults.style.overflow = 'hidden';
-    const usedH = (viewResults.querySelector('.results-header')?.offsetHeight || 0)
-                + (viewResults.querySelector('.filter-bar')?.offsetHeight     || 0);
-    tripsPanel.style.height = (viewResults.clientHeight - usedH) + 'px';
+    const usedH = 0; // trips-panel has its own page-header
+    tripsPanel.style.height = viewResults.clientHeight + 'px';
     tripsPanel.classList.add('visible');
   } else {
     tripsPanel.classList.remove('visible');
     viewResults.style.overflow = '';
+    if (photosHdr)  photosHdr.style.display  = '';
+    if (filterBar)  filterBar.style.display  = '';
+    if (resultsHdr) resultsHdr.style.display = '';
     if (photoList)    photoList.style.display    = '';
     if (listFooter)   listFooter.style.display   = '';
     if (selBar)       selBar.style.display        = '';
@@ -1568,18 +1577,26 @@ function _showPlacesPanel(show) {
   const selBar      = document.getElementById('select-bar');
   if (!viewResults || !placesPanel) return;
 
+  const photosHdrP = document.getElementById('photos-page-header');
+  const filterBarP  = viewResults?.querySelector('.filter-bar');
+  const resultsHdrP = viewResults?.querySelector('.results-header');
+
   if (show) {
     [photoList, listFooter, trialBanner, selBar, exportBar, dateRangeBar, thumbGenBar]
       .forEach(el => { if (el) el.style.display = 'none'; });
+    if (photosHdrP)  photosHdrP.style.display  = 'none';
+    if (filterBarP)  filterBarP.style.display  = 'none';
+    if (resultsHdrP) resultsHdrP.style.display = 'none';
     viewResults.style.overflow = 'hidden';
-    const usedH = (viewResults.querySelector('.results-header')?.offsetHeight || 0)
-                + (viewResults.querySelector('.filter-bar')?.offsetHeight     || 0);
-    placesPanel.style.height = (viewResults.clientHeight - usedH) + 'px';
+    placesPanel.style.height = viewResults.clientHeight + 'px';
     placesPanel.classList.add('visible');
   } else {
     PlaceDetailMap.destroy();
     placesPanel.classList.remove('visible');
     viewResults.style.overflow = '';
+    if (photosHdrP)  photosHdrP.style.display  = '';
+    if (filterBarP)  filterBarP.style.display  = '';
+    if (resultsHdrP) resultsHdrP.style.display = '';
     if (photoList)     photoList.style.display    = '';
     if (listFooter)    listFooter.style.display   = '';
     if (selBar)        selBar.style.display        = '';
@@ -1769,6 +1786,7 @@ document.getElementById('sb-places')?.addEventListener('click', async () => {
   _showMapPanel(false);
   _showTripsPanel(false);
   _showAlbumsPanel(false);
+  document.getElementById('sb-results')?.classList.add('active');
   Places.onTabActivated();
 });
 
@@ -1785,18 +1803,26 @@ function _showAlbumsPanel(show) {
   const selBar       = document.getElementById('select-bar');
   if (!viewResults || !albumsPanel) return;
 
+  const photosHdrA = document.getElementById('photos-page-header');
+  const filterBarA = viewResults?.querySelector('.filter-bar');
+  const resultsHdrA = viewResults?.querySelector('.results-header');
+
   if (show) {
     [photoList, listFooter, trialBanner, selBar, exportBar, dateRangeBar, thumbGenBar]
       .forEach(el => { if (el) el.style.display = 'none'; });
     document.getElementById('albums-breadcrumb')?.classList.remove('visible');
+    if (photosHdrA)  photosHdrA.style.display  = 'none';
+    if (filterBarA)  filterBarA.style.display  = 'none';
+    if (resultsHdrA) resultsHdrA.style.display = 'none';
     viewResults.style.overflow = 'hidden';
-    const usedH = (viewResults.querySelector('.results-header')?.offsetHeight || 0)
-                + (viewResults.querySelector('.filter-bar')?.offsetHeight || 0);
-    albumsPanel.style.height = (viewResults.clientHeight - usedH) + 'px';
+    albumsPanel.style.height = viewResults.clientHeight + 'px';
     albumsPanel.classList.add('visible');
   } else {
     albumsPanel.classList.remove('visible');
     viewResults.style.overflow = '';
+    if (photosHdrA)  photosHdrA.style.display  = '';
+    if (filterBarA)  filterBarA.style.display  = '';
+    if (resultsHdrA) resultsHdrA.style.display = '';
     if (photoList)    photoList.style.display    = '';
     if (listFooter)   listFooter.style.display   = '';
     if (selBar)       selBar.style.display        = '';
@@ -1957,9 +1983,11 @@ document.getElementById('sb-albums')?.addEventListener('click', async () => {
   document.getElementById('sb-albums')?.classList.add('active');
   _showMapPanel(false);
   _showTripsPanel(false);
+  _showPlacesPanel(false);
   state.albumId   = null;
   state.albumName = null;
   document.getElementById('albums-breadcrumb')?.classList.remove('visible');
+  document.getElementById('sb-results')?.classList.add('active');
   Albums.onTabActivated();
 });
 

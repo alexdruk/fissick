@@ -153,24 +153,48 @@ html, body {
 /* ════════════════════════════════════════
    IMPORT VIEW
 ════════════════════════════════════════ */
+/* Full-width eyebrow banner at the very top of import view */
+.import-eyebrow-bar {
+  width: 100%;
+  padding: 10px 0;
+  text-align: center;
+  font-family: var(--mono); font-size: 9px; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--acc);
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+
 #view-import {
-  padding: 52px 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   overflow-y: auto;
 }
-.import-inner { max-width: 520px; }
-
-.import-eyebrow {
-  font-family: var(--mono); font-size: 9px; letter-spacing: .16em;
-  text-transform: uppercase; color: var(--acc); margin-bottom: 12px;
+.import-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 40px 60px;
+  text-align: center;
 }
-.import-title   { font-family: var(--serif); font-size: 34px; color: var(--ink); margin-bottom: 10px; line-height: 1.12; }
+.import-inner { max-width: 560px; width: 100%; }
+
+.import-title   { font-family: var(--serif); font-size: 34px; color: var(--ink); margin-bottom: 12px; line-height: 1.12; }
 .import-title i { color: var(--acc); font-style: italic; }
-.import-sub     { font-size: 13.5px; color: var(--mu); font-weight: 300; line-height: 1.75; margin-bottom: 16px; max-width: 480px; }
+.import-sub     {
+  font-size: 13.5px; color: var(--mu); font-weight: 300; line-height: 1.75;
+  margin-bottom: 20px;
+  width: 75%; margin-left: auto; margin-right: auto;
+}
 
 /* Feature pills row */
 .import-features {
   display: flex; flex-wrap: wrap; gap: 6px;
   margin-bottom: 28px;
+  justify-content: center;
 }
 .import-feat {
   font-family: var(--mono); font-size: 9.5px; font-weight: 500;
@@ -298,13 +322,13 @@ html, body {
 /* ════════════════════════════════════════
    RESULTS VIEW
 ════════════════════════════════════════ */
-.results-header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 14px 28px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.results-header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 10px 28px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 0; }
 .results-title  { display: none; }  /* title now shown in sidebar selection */
 .results-subtitle { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .1em; text-transform: lowercase; white-space: nowrap; }
 .results-stats  { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
 
-.stat-pill       { display: flex; align-items: center; gap: 7px; background: var(--panel2); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; font-size: 12px; color: var(--mu); }
-.stat-pill .sp-val { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--ink); }
+.stat-pill       { display: flex; align-items: center; gap: 5px; background: var(--panel2); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; font-size: 11px; color: var(--mu); }
+.stat-pill .sp-val { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--ink); }
 .stat-pill.green   { background: var(--green-lt); border-color: var(--green-bdr); }
 .stat-pill.green .sp-val { color: var(--green); }
 .stat-pill.amber   { background: var(--amber-lt); border-color: var(--amber-bdr); }
@@ -1563,8 +1587,9 @@ html, body {
 
     <!-- ══ IMPORT ══ -->
     <div class="view active" id="view-import">
+      <div class="import-eyebrow-bar">Fossick · Local-first archive tool</div>
+      <div class="import-body">
       <div class="import-inner">
-        <div class="import-eyebrow">Fossick · Local-first archive tool</div>
         <div class="import-title">Turn your Google Takeout<br><i>into a personal archive.</i></div>
         <div class="import-sub">Fossick repairs every broken photo date and GPS coordinate — including Google’s 2024 format change that broke everything else. Then gives you a living archive: an interactive location map, automatically detected trips, your albums, and your most-visited places. Nothing leaves your machine.</div>
 
@@ -1574,7 +1599,6 @@ html, body {
           <span class="import-feat">✈️ Trips</span>
           <span class="import-feat">📚 Albums</span>
           <span class="import-feat">📍 Places</span>
-          <span class="import-feat">🔒 100% local</span>
         </div>
 
         <div class="source-section">
@@ -1604,6 +1628,7 @@ html, body {
 
         <button id="btn-start">Process archive →</button>
       </div>
+      </div><!-- /import-body -->
     </div>
 
     <!-- ══ PROCESSING ══ -->
@@ -1654,7 +1679,6 @@ html, body {
         <div class="page-header-sub" id="photos-page-sub">processing complete</div>
       </div>
       <div class="results-header">
-        <button class="back-btn" id="btn-back-results" title="Clear results and start over">← Start over</button>
         <div class="results-stats" id="results-stats-row"></div>
       </div>
 
