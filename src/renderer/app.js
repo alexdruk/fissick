@@ -966,11 +966,22 @@ function _updateSelectionUI() {
   }
 
   // Enable/disable photo export buttons
-  const csvBtn  = document.getElementById('btn-export-csv');
-  const copyBtn = document.getElementById('btn-export-copy');
+  const csvBtn    = document.getElementById('btn-export-csv');
+  const copyBtn   = document.getElementById('btn-export-copy');
+  const byTripBtn = document.getElementById('btn-export-by-trip');
+  const byDateBtn = document.getElementById('btn-export-by-date');
   const hasSelection = n > 0;
-  if (csvBtn)  csvBtn.disabled  = !hasSelection;
-  if (copyBtn) copyBtn.disabled = !hasSelection;
+  if (csvBtn)    csvBtn.disabled    = !hasSelection;
+  if (copyBtn)   copyBtn.disabled   = !hasSelection;
+  // Export by Trip: disabled when photos are selected (only makes sense for all photos)
+  if (byTripBtn) {
+    byTripBtn.disabled = hasSelection;
+    byTripBtn.title = hasSelection
+      ? 'Deselect all photos to export by trip (works on the full archive only)'
+      : 'Copy all photos into Trip folders — one sub-folder per trip';
+  }
+  // Export by Date: always enabled — exports selection if present, all photos if not
+  if (byDateBtn) byDateBtn.disabled = false;
 }
 
 // Select-all / deselect-all
@@ -1115,32 +1126,78 @@ document.getElementById('btn-export-kml')?.addEventListener('click', async (e) =
   }
 });
 
-// Export by Trip
+// Shared helper — wires progress bar for by-trip and by-date exports
+function _runExportWithProgress(btn, originalLabel) {
+  const progressWrap = document.getElementById('copy-progress-wrap');
+  const barFill      = document.getElementById('copy-progress-bar-fill');
+  const barLabel     = document.getElementById('copy-progress-label');
+  progressWrap.style.display = 'flex';
+  barFill.style.width = '0%';
+  barLabel.textContent = 'Exporting…';
+
+  const unsubProgress = window.tt.onCopyProgress(({ copied, skipped, total, percent }) => {
+    barFill.style.width = percent + '%';
+    barLabel.textContent = `Exporting ${(copied + skipped).toLocaleString()} / ${total.toLocaleString()}…`;
+  });
+
+  const unsubDone = window.tt.onCopyDone(({ copied, skipped, aborted, destDir }) => {
+    unsubProgress();
+    unsubDone();
+    progressWrap.style.display = 'none';
+    btn.disabled = false;
+    btn.innerHTML = originalLabel;
+    const abortBtn = document.getElementById('btn-copy-abort');
+    if (abortBtn) { abortBtn.disabled = false; abortBtn.textContent = 'Abort'; }
+    if (aborted) {
+      _exportToast(`Aborted — ${copied.toLocaleString()} files copied before stopping.`, true);
+    } else {
+      _exportToast(`Done — ${copied.toLocaleString()} copied${skipped > 0 ? `, ${skipped} skipped` : ''}.`);
+    }
+  });
+}
+
+// Export by Trip — always exports all photos, disabled when selection is active
 document.getElementById('btn-export-by-trip')?.addEventListener('click', async (e) => {
   const btn = e.currentTarget;
   btn.disabled = true; btn.textContent = 'Exporting…';
-  try {
-    const result = await window.tt.exportByTrip();
-    if (result.ok) _exportToast(`Exported by trip — ${result.copied.toLocaleString()} photos copied${result.skipped > 0 ? `, ${result.skipped} skipped` : ''}.`);
-    else if (!result.canceled) _exportToast('Export failed: ' + result.error, true);
-  } finally {
-    btn.disabled = false;
+  const result = await window.tt.exportByTrip();
+  if (!result.ok) {
+    btn.disabled = state.selectedPaths.size > 0;
     btn.innerHTML = '<span class="eb-icon">✈️</span> Export by Trip';
+    if (!result.canceled) _exportToast('Export failed: ' + result.error, true);
+    return;
   }
+  _runExportWithProgress(btn, '<span class="eb-icon">✈️</span> Export by Trip');
 });
 
-// Export by Date
+// Export by Date — exports selection if present, otherwise all photos with confirmation
 document.getElementById('btn-export-by-date')?.addEventListener('click', async (e) => {
   const btn = e.currentTarget;
+  const selectedPaths = [...state.selectedPaths];
+  const hasSelection  = selectedPaths.length > 0;
+
+  if (!hasSelection) {
+    const totalStats = await window.tt.getStats();
+    const total = totalStats?.total || 0;
+    const confirmed = await window.tt.showConfirmDialog({
+      title:   'Export all photos by date?',
+      message: `This will copy all ${total.toLocaleString()} photos into Year/Month folders.
+
+Are you sure?`,
+      buttons: ['Cancel', 'Export All'],
+    });
+    if (!confirmed) return;
+  }
+
   btn.disabled = true; btn.textContent = 'Exporting…';
-  try {
-    const result = await window.tt.exportByDate();
-    if (result.ok) _exportToast(`Exported by date — ${result.copied.toLocaleString()} photos copied${result.skipped > 0 ? `, ${result.skipped} skipped` : ''}.`);
-    else if (!result.canceled) _exportToast('Export failed: ' + result.error, true);
-  } finally {
+  const result = await window.tt.exportByDate({ selectedPaths });
+  if (!result.ok) {
     btn.disabled = false;
     btn.innerHTML = '<span class="eb-icon">📅</span> Export by Date';
+    if (!result.canceled) _exportToast('Export failed: ' + result.error, true);
+    return;
   }
+  _runExportWithProgress(btn, '<span class="eb-icon">📅</span> Export by Date');
 });
 
 document.getElementById('btn-export-copy').addEventListener('click', async (e) => {
