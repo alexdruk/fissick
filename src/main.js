@@ -1799,6 +1799,173 @@ ipcMain.handle('db:get-place-detail', (_event, { placeId } = {}) => {
   return { place, photos };
 });
 
+// ── Export: KML (Location History) ───────────────────────────────────────────
+ipcMain.handle('export:kml', async () => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title:       'Export Location History as KML',
+    defaultPath: `fissick-locations-${_dateStamp()}.kml`,
+    filters:     [{ name: 'KML Files', extensions: ['kml'] }],
+  });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+
+  try {
+    const points = db.prepare(`
+      SELECT lat, lng, ts, type, name, address
+      FROM locations ORDER BY ts ASC
+    `).all();
+
+    const visits = points.filter(p => p.type === 'visit' && p.name);
+    const track  = points.filter(p => p.type === 'point');
+
+    const esc   = s  => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const fmtTs = ts => ts ? new Date(ts).toISOString() : '';
+
+    const lines = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<kml xmlns="http://www.opengis.net/kml/2.2">',
+      '<Document>',
+      '  <name>Location History</name>',
+      '  <Style id="visit"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/blu-circle.png</href></Icon></IconStyle></Style>',
+      '  <Style id="track"><LineStyle><color>ff0000ff</color><width>2</width></LineStyle></Style>',
+    ];
+
+    // Placemarks — named visits
+    for (const v of visits) {
+      lines.push('  <Placemark>');
+      lines.push(`    <name>${esc(v.name)}</name>`);
+      if (v.address) lines.push(`    <description>${esc(v.address)}</description>`);
+      if (v.ts)      lines.push(`    <TimeStamp><when>${fmtTs(v.ts)}</when></TimeStamp>`);
+      lines.push('    <styleUrl>#visit</styleUrl>');
+      lines.push(`    <Point><coordinates>${v.lng},${v.lat},0</coordinates></Point>`);
+      lines.push('  </Placemark>');
+    }
+
+    // Track — GPS point path
+    if (track.length > 0) {
+      lines.push('  <Placemark>');
+      lines.push('    <name>GPS Track</name>');
+      lines.push('    <styleUrl>#track</styleUrl>');
+      lines.push('    <LineString>');
+      lines.push('      <tessellate>1</tessellate>');
+      lines.push('      <coordinates>');
+      for (const p of track) lines.push(`        ${p.lng},${p.lat},0`);
+      lines.push('      </coordinates>');
+      lines.push('    </LineString>');
+      lines.push('  </Placemark>');
+    }
+
+    lines.push('</Document></kml>');
+    fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
+    return { ok: true, filePath, waypoints: visits.length, trackPoints: track.length };
+  } catch (err) {
+    console.error('[export:kml]', err);
+    return { ok: false, error: err.message };
+  }
+});
+
+// ── Export: Photos by Trip ────────────────────────────────────────────────────
+ipcMain.handle('export:by-trip', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title:      'Choose Export Destination Folder',
+    buttonLabel: 'Export Here',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (canceled || !filePaths?.[0]) return { ok: false, canceled: true };
+  const destRoot = filePaths[0];
+
+  try {
+    // Get all trips with their photos
+    const trips = db.prepare(`SELECT id, name FROM trips ORDER BY start_ts ASC`).all();
+    let copied = 0, skipped = 0;
+
+    for (const trip of trips) {
+      // Sanitise trip name for use as folder name
+      const safeName = trip.name.replace(/[/\\:*?"<>|]/g, '-').trim().slice(0, 80);
+      const tripDir  = path.join(destRoot, 'Trips', safeName);
+      fs.mkdirSync(tripDir, { recursive: true });
+
+      const photos = db.prepare(`
+        SELECT file_path, filename FROM photos
+        WHERE trip_id = ? ORDER BY date_ts ASC
+      `).all(trip.id);
+
+      for (const photo of photos) {
+        const dest = path.join(tripDir, photo.filename);
+        try {
+          if (!fs.existsSync(dest)) {
+            fs.copyFileSync(photo.file_path, dest);
+            copied++;
+          } else {
+            skipped++;
+          }
+        } catch { skipped++; }
+      }
+    }
+
+    // Also export photos with no trip in an "Unassigned" folder
+    const unassigned = db.prepare(`
+      SELECT file_path, filename FROM photos WHERE trip_id IS NULL ORDER BY date_ts ASC
+    `).all();
+    if (unassigned.length > 0) {
+      const unassignedDir = path.join(destRoot, 'Trips', '_Unassigned');
+      fs.mkdirSync(unassignedDir, { recursive: true });
+      for (const photo of unassigned) {
+        const dest = path.join(unassignedDir, photo.filename);
+        try {
+          if (!fs.existsSync(dest)) { fs.copyFileSync(photo.file_path, dest); copied++; }
+          else skipped++;
+        } catch { skipped++; }
+      }
+    }
+
+    return { ok: true, copied, skipped, destRoot };
+  } catch (err) {
+    console.error('[export:by-trip]', err);
+    return { ok: false, error: err.message };
+  }
+});
+
+// ── Export: Photos by Date (Year/Month) ───────────────────────────────────────
+ipcMain.handle('export:by-date', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title:       'Choose Export Destination Folder',
+    buttonLabel: 'Export Here',
+    properties:  ['openDirectory', 'createDirectory'],
+  });
+  if (canceled || !filePaths?.[0]) return { ok: false, canceled: true };
+  const destRoot = filePaths[0];
+
+  try {
+    const photos = db.prepare(`
+      SELECT file_path, filename, date_ts FROM photos ORDER BY date_ts ASC NULLS LAST
+    `).all();
+    let copied = 0, skipped = 0;
+
+    for (const photo of photos) {
+      let folder;
+      if (photo.date_ts) {
+        const d = new Date(photo.date_ts);
+        const year  = d.getUTCFullYear().toString();
+        const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+        folder = path.join(destRoot, year, month);
+      } else {
+        folder = path.join(destRoot, '_No Date');
+      }
+      fs.mkdirSync(folder, { recursive: true });
+      const dest = path.join(folder, photo.filename);
+      try {
+        if (!fs.existsSync(dest)) { fs.copyFileSync(photo.file_path, dest); copied++; }
+        else skipped++;
+      } catch { skipped++; }
+    }
+
+    return { ok: true, copied, skipped, destRoot };
+  } catch (err) {
+    console.error('[export:by-date]', err);
+    return { ok: false, error: err.message };
+  }
+});
+
 // ── Trips ──────────────────────────────────────────────────────────────────────
 
 // Grid-based density clustering to find candidate home zones.

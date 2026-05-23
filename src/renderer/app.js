@@ -556,7 +556,9 @@ async function loadResults() {
     // Location export buttons -- only meaningful when there is location data
     const btnGpx = document.getElementById('btn-export-gpx');
     const btnMap = document.getElementById('btn-export-map-html');
+    const btnKml = document.getElementById('btn-export-kml');
     if (btnGpx) btnGpx.style.display = hasLoc ? '' : 'none';
+    if (btnKml) btnKml.style.display = hasLoc ? '' : 'none';
     if (btnMap) btnMap.style.display = hasLoc ? '' : 'none';
   } catch {}
 
@@ -1096,6 +1098,48 @@ document.getElementById('btn-export-csv').addEventListener('click', async (e) =>
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<span class="eb-icon">📋</span> Photos CSV';
+  }
+});
+
+// KML export
+document.getElementById('btn-export-kml')?.addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true; btn.textContent = 'Exporting…';
+  try {
+    const result = await window.tt.exportKml();
+    if (result.ok) _exportToast(`KML saved — ${result.waypoints.toLocaleString()} places, ${result.trackPoints.toLocaleString()} track points.`);
+    else if (!result.canceled) _exportToast('KML export failed: ' + result.error, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="eb-icon">🌍</span> Location KML';
+  }
+});
+
+// Export by Trip
+document.getElementById('btn-export-by-trip')?.addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true; btn.textContent = 'Exporting…';
+  try {
+    const result = await window.tt.exportByTrip();
+    if (result.ok) _exportToast(`Exported by trip — ${result.copied.toLocaleString()} photos copied${result.skipped > 0 ? `, ${result.skipped} skipped` : ''}.`);
+    else if (!result.canceled) _exportToast('Export failed: ' + result.error, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="eb-icon">✈️</span> Export by Trip';
+  }
+});
+
+// Export by Date
+document.getElementById('btn-export-by-date')?.addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true; btn.textContent = 'Exporting…';
+  try {
+    const result = await window.tt.exportByDate();
+    if (result.ok) _exportToast(`Exported by date — ${result.copied.toLocaleString()} photos copied${result.skipped > 0 ? `, ${result.skipped} skipped` : ''}.`);
+    else if (!result.canceled) _exportToast('Export failed: ' + result.error, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="eb-icon">📅</span> Export by Date';
   }
 });
 

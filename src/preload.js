@@ -77,6 +77,9 @@ contextBridge.exposeInMainWorld('tt', {
 
   getTripBbox:      (opts) => ipcRenderer.invoke('trips:get-trip-bbox', opts),
   getRunState:      ()     => ipcRenderer.invoke('process:get-run-state'),
+  exportKml:        ()     => ipcRenderer.invoke('export:kml'),
+  exportByTrip:     ()     => ipcRenderer.invoke('export:by-trip'),
+  exportByDate:     ()     => ipcRenderer.invoke('export:by-date'),
 
   // ── Places ─────────────────────────────────────────────────────────────────────
   computePlaces:   ()     => ipcRenderer.invoke('places:compute'),

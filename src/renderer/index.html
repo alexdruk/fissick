@@ -1825,6 +1825,10 @@ html, body {
                 title="Export your location history as a GPX file — opens in Google Maps, Apple Maps, Garmin and most mapping apps">
           <span class="eb-icon">🗺</span> Location GPX
         </button>
+        <button class="export-btn" id="btn-export-kml" style="display:none"
+                title="Export your location history as KML — opens in Google Earth, Apple Maps, and most mapping apps">
+          <span class="eb-icon">🌍</span> Location KML
+        </button>
         <button class="export-btn" id="btn-export-map-html" style="display:none"
                 title="Save your location history as a self-contained web page — open it in any browser, share it with anyone, no app needed">
           <span class="eb-icon">🌐</span> Interactive Map
@@ -1836,6 +1840,14 @@ html, body {
         <button class="export-btn" id="btn-export-copy"
                 title="Copy the selected photos to a folder of your choice, with their dates and GPS already written in">
           <span class="eb-icon">📂</span> Copy Fixed Files
+        </button>
+        <button class="export-btn" id="btn-export-by-trip"
+                title="Copy all photos into Trip folders — one sub-folder per trip, ready to browse by journey">
+          <span class="eb-icon">✈️</span> Export by Trip
+        </button>
+        <button class="export-btn" id="btn-export-by-date"
+                title="Copy all photos into Year/Month folders — the standard format for Apple Photos, Lightroom and Synology imports">
+          <span class="eb-icon">📅</span> Export by Date
         </button>
         <!-- Inline progress for copy operation -->
         <div id="copy-progress-wrap">
