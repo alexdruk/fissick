@@ -1926,9 +1926,18 @@ ipcMain.handle('export:by-date', async (_event, { selectedPaths = [] } = {}) => 
   const destRoot = filePaths[0];
 
   const hasSelection = selectedPaths.length > 0;
-  const photos = hasSelection
-    ? db.prepare(`SELECT file_path, filename, date_ts FROM photos WHERE file_path IN (${selectedPaths.map(() => '?').join(',')}) ORDER BY date_ts ASC NULLS LAST`).all(...selectedPaths)
-    : db.prepare(`SELECT file_path, filename, date_ts FROM photos ORDER BY date_ts ASC NULLS LAST`).all();
+  let photos;
+  if (hasSelection) {
+    // Chunk to stay within SQLite's ~900-parameter limit
+    photos = [];
+    const CHUNK = 900;
+    for (let i = 0; i < selectedPaths.length; i += CHUNK) {
+      const chunk = selectedPaths.slice(i, i + CHUNK);
+      photos.push(...db.prepare(`SELECT file_path, filename, date_ts FROM photos WHERE file_path IN (${chunk.map(() => '?').join(',')}) ORDER BY date_ts ASC NULLS LAST`).all(...chunk));
+    }
+  } else {
+    photos = db.prepare(`SELECT file_path, filename, date_ts FROM photos ORDER BY date_ts ASC NULLS LAST`).all();
+  }
   const total = photos.length;
 
   ;(async () => {
