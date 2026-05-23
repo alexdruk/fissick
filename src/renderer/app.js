@@ -54,16 +54,24 @@ function showView(name) {
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 document.getElementById('sb-import').addEventListener('click', () => showView('import'));
 document.getElementById('sb-results').addEventListener('click', async () => {
-  await loadResults();
-  showView('results');
-  // Activate Photos & Videos in archive sidebar
-  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
-  document.getElementById('sb-results').classList.add('active');
-  document.getElementById('sb-photos')?.classList.add('active');
-  _showMapPanel(false);
+  // Explicitly close all panels and restore photos view before loading
   _showTripsPanel(false);
   _showAlbumsPanel(false);
   _showPlacesPanel(false);
+  _showMapPanel(false);
+  // Ensure key elements are visible (may have been hidden by a panel)
+  const _vr = document.getElementById('view-results');
+  if (_vr) {
+    _vr.querySelector('.results-header') && (_vr.querySelector('.results-header').style.display = '');
+    _vr.querySelector('.filter-bar')     && (_vr.querySelector('.filter-bar').style.display     = '');
+  }
+  const _ph = document.getElementById('photos-page-header');
+  if (_ph) _ph.style.display = '';
+  await loadResults();
+  showView('results');
+  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  document.getElementById('sb-results').classList.add('active');
+  document.getElementById('sb-photos')?.classList.add('active');
 });
 document.getElementById('sb-photos')?.addEventListener('click', async () => {
   if (state.view !== 'results') {
