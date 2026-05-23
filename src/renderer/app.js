@@ -239,6 +239,61 @@ async function startProcessing() {
   });
 }
 
+async function checkForResumableRun() {
+  try {
+    const runState = await window.tt.getRunState();
+    const banner   = document.getElementById('resume-banner');
+    const sub      = document.getElementById('resume-banner-sub');
+    if (!banner) return;
+    if (runState && runState.processed > 0) {
+      if (sub) sub.textContent = `${runState.processed.toLocaleString()} photos already processed — continue from where it stopped.`;
+      banner.classList.add('visible');
+      // Stash run state for the resume handler
+      banner.dataset.runState = JSON.stringify(runState);
+    } else {
+      banner.classList.remove('visible');
+    }
+  } catch {}
+}
+
+async function resumeProcessing(savedRunState) {
+  state.processing = true;
+
+  // Do NOT call resetData() — keep the DB as-is so worker skips processed files
+  const list = document.getElementById('photo-list');
+  if (list) list.innerHTML = '';
+  document.getElementById('results-stats-row').innerHTML = '';
+  showTrialBanner(false);
+
+  const mapTab    = document.getElementById('tab-map');
+  const tripsTab  = document.getElementById('tab-trips');
+  const albumsTab = document.getElementById('tab-albums');
+  if (mapTab)    mapTab.style.display    = 'none';
+  if (tripsTab)  tripsTab.style.display  = 'none';
+  if (albumsTab) albumsTab.style.display = 'none';
+  document.getElementById('sb-trips').style.display = 'none';
+  document.getElementById('sb-albums')?.style && (document.getElementById('sb-albums').style.display = 'none');
+  document.getElementById('sb-places')?.style && (document.getElementById('sb-places').style.display = 'none');
+  document.getElementById('tab-places')?.style && (document.getElementById('tab-places').style.display = 'none');
+  document.getElementById('sb-archive')?.style && (document.getElementById('sb-archive').style.display = 'none');
+  _showMapPanel(false);
+  _showTripsPanel(false);
+  _showAlbumsPanel(false);
+  _showPlacesPanel(false);
+
+  resetProcessingUI();
+  showView('processing');
+
+  if (state.unsubscribe) state.unsubscribe();
+  state.unsubscribe = window.tt.onProcessEvent(handleProcessEvent);
+
+  await window.tt.startProcessing({
+    zipPaths:        savedRunState.zipPaths        || [],
+    extractedFolder: savedRunState.extractedFolder || savedRunState.tempDir || null,
+    isResume:        true,
+  });
+}
+
 function resetProcessingUI() {
   state.isPaused = false;
   document.getElementById('phase-badge').className = 'phase-badge processing';
@@ -782,6 +837,7 @@ document.getElementById('btn-back-results')?.addEventListener('click', async () 
   const _sbArchB = document.getElementById('sb-archive');
   if (_sbArchB) _sbArchB.style.display = 'none';
   showView('import');
+  checkForResumableRun();
 });
 
 // ── Filter tabs (including Map tab) ───────────────────────────────────────────
@@ -1473,6 +1529,19 @@ function closeLightbox() {
   if (img)   { img.src = ''; img.style.display = 'none'; }
   if (video) { video.pause(); video.src = ''; video.style.display = 'none'; }
 }
+
+// Resume banner
+document.getElementById('btn-resume-processing')?.addEventListener('click', () => {
+  const banner = document.getElementById('resume-banner');
+  const saved  = banner?.dataset?.runState;
+  if (!saved) return;
+  try { resumeProcessing(JSON.parse(saved)); } catch {}
+});
+document.getElementById('btn-discard-run')?.addEventListener('click', async () => {
+  document.getElementById('resume-banner')?.classList.remove('visible');
+  await window.tt.resetData();
+  await window.tt.resetTrips();
+});
 
 document.getElementById('lightbox-back-btn').addEventListener('click', (e) => {
   e.stopPropagation();
@@ -2659,6 +2728,7 @@ Autocomplete(
 //   'hz-search-input', 'hz-search-dropdown', ...
 // );
 async function init() {
+  await checkForResumableRun();
   await refreshLicenceStatus();
   const stats = await window.tt.getStats();
   if (stats && stats.total > 0) {

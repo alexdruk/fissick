@@ -219,7 +219,22 @@ async function run() {
       status('indexing', `Found ${outsideCount.toLocaleString()} additional media file(s) outside Google Photos.`);
     }
 
-    status('processing', `Processing ${uniqueMedia.length.toLocaleString()} photos with ${CONCURRENCY} concurrent ExifTool processes…`);
+    // ── Resume: skip already-processed files ────────────────────────────────
+    // Photos already in the DB were processed in a previous (interrupted) run.
+    // We check by file_path — INSERT OR REPLACE would overwrite them anyway,
+    // but skipping saves ExifTool calls and time.
+    const alreadyDone = new Set(
+      db.prepare(`SELECT file_path FROM photos WHERE exif_written = 1 OR sidecar_found = 1`).all().map(r => r.file_path)
+    );
+    const toProcess = alreadyDone.size > 0
+      ? uniqueMedia.filter(p => !alreadyDone.has(p))
+      : uniqueMedia;
+
+    if (alreadyDone.size > 0) {
+      status('resuming', `Resuming — skipping ${alreadyDone.size.toLocaleString()} already-processed photos, ${toProcess.length.toLocaleString()} remaining…`);
+    }
+
+    status('processing', `Processing ${toProcess.length.toLocaleString()} photos with ${CONCURRENCY} concurrent ExifTool processes…`);
 
     // ── Phase 4a: EXIF writing pass (no thumbnails — keep pool fast) ─────────
     let processed = 0, fixed = 0, matched = 0, failed = 0;
@@ -247,10 +262,10 @@ async function run() {
       const percent  = Math.round((processed / uniqueMedia.length) * 100);
       const eta      = etaSecs ? ` — ETA ${Math.round(etaSecs / 60)}m` : '';
       console.log(`[fossick] ${percent}% — ${processed.toLocaleString()} / ${uniqueMedia.length.toLocaleString()} photos${eta}`);
-      send('progress', { processed, total: uniqueMedia.length, fixed, matched, failed, percent, etaSecs });
+      send('progress', { processed: processed + alreadyDone.size, total: uniqueMedia.length, fixed, matched, failed, percent, etaSecs });
     }
 
-    await withPool(uniqueMedia, CONCURRENCY, async (mediaPath) => {
+    await withPool(toProcess, CONCURRENCY, async (mediaPath) => {
       const shouldAbort = await checkControl();
       if (shouldAbort) return;
 
@@ -593,8 +608,8 @@ async function run() {
     }
 
     // ── Phase 6: Done ────────────────────────────────────────────────────────
-    status('done', `Done — fixed ${fixed.toLocaleString()} of ${uniqueMedia.length.toLocaleString()} photos.`);
-    send('summary', { processed, fixed, matched, failed });
+    status('done', `Done — fixed ${fixed.toLocaleString()} of ${toProcess.length.toLocaleString()} photos (${alreadyDone.size.toLocaleString()} skipped from previous run).`);
+    send('summary', { processed: processed + alreadyDone.size, fixed, matched, failed });
 
   } catch (err) {
     console.error('[photosWorker] Fatal error:', err);

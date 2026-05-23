@@ -421,6 +421,7 @@ app.on('window-all-closed', () => {
 function checkAllDone() {
   if (workersDone.photos && (!locationWorkerSpawned || workersDone.location)) {
     db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_complete', '1')").run();
+    db.prepare("DELETE FROM settings WHERE key = 'run_state'").run();
     isProcessing = false;
   }
 }
@@ -495,7 +496,7 @@ ipcMain.handle('dialog:select-folder', async () => {
 });
 
 // Start processing — spawns Worker Thread, forwards events to renderer
-ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
+ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder, isResume = false }) => {
   if (activeWorker) {
     activeWorker.terminate();
     activeWorker = null;
@@ -509,12 +510,14 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
   workersDone           = { photos: false, location: false };
   locationWorkerSpawned = false;
 
-  // Wipe previous run's data and mark as incomplete
-  db.exec('DELETE FROM photo_albums');
-  db.exec('DELETE FROM albums');
-  db.exec('DELETE FROM places');
-  db.exec('DELETE FROM photos');
-  db.exec('DELETE FROM locations');
+  if (!isResume) {
+    // Fresh run — wipe all previous data
+    db.exec('DELETE FROM photo_albums');
+    db.exec('DELETE FROM albums');
+    db.exec('DELETE FROM places');
+    db.exec('DELETE FROM photos');
+    db.exec('DELETE FROM locations');
+  }
   db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_complete', '0')").run();
 
   const workerPath = path.join(__dirname, 'processors', 'photosWorker.js');
@@ -549,6 +552,11 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
   const licensed   = !!licenceRow?.value;
   const devMode    = process.env.FOSSICK_DEV === '1';
   if (devMode) console.log('[dev] Trial limit disabled — running in dev mode');
+
+  // Save run state so we can resume if interrupted
+  db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_state', ?)").run(
+    JSON.stringify({ zipPaths: zipPaths || [], extractedFolder: extractedFolder || null, tempDir: extractTo || '' })
+  );
 
   isProcessing = true;
   const controlSab = newControlBuffer(); // fresh control buffer for this run
@@ -610,6 +618,18 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder }) => {
   });
 
   return { started: true };
+});
+
+// Get saved run state for resume
+ipcMain.handle('process:get-run-state', () => {
+  const complete  = db.prepare("SELECT value FROM settings WHERE key = 'run_complete'").get();
+  const runState  = db.prepare("SELECT value FROM settings WHERE key = 'run_state'").get();
+  const processed = db.prepare("SELECT COUNT(*) as n FROM photos").get()?.n || 0;
+  if (!runState?.value || complete?.value === '1') return null;
+  try {
+    const state = JSON.parse(runState.value);
+    return { ...state, processed };
+  } catch { return null; }
 });
 
 // Cancel a running job — terminates both workers

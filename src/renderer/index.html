@@ -153,6 +153,34 @@ html, body {
 /* ════════════════════════════════════════
    IMPORT VIEW
 ════════════════════════════════════════ */
+/* Resume banner */
+#resume-banner {
+  display: none;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 28px;
+  background: var(--blue-lt);
+  border-bottom: 1px solid var(--blue-border);
+  flex-shrink: 0;
+}
+#resume-banner.visible { display: flex; }
+.resume-banner-text { font-size: 13px; color: var(--blue); flex: 1; }
+.resume-banner-text strong { font-weight: 500; }
+#btn-resume-processing {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  background: var(--blue); color: #fff; border: none;
+  padding: 7px 16px; border-radius: 4px; cursor: pointer;
+  letter-spacing: .04em; white-space: nowrap;
+  transition: opacity .1s;
+}
+#btn-resume-processing:hover { opacity: .85; }
+#btn-discard-run {
+  font-family: var(--mono); font-size: 10px; color: var(--dim);
+  background: transparent; border: none; cursor: pointer;
+  padding: 4px 0; white-space: nowrap;
+}
+#btn-discard-run:hover { color: var(--ink); }
+
 /* Full-width eyebrow banner at the very top of import view */
 .import-eyebrow-bar {
   width: 100%;
@@ -1677,6 +1705,11 @@ html, body {
     <!-- ══ IMPORT ══ -->
     <div class="view active" id="view-import">
       <div class="import-eyebrow-bar">Fossick · Local-first archive tool</div>
+      <div id="resume-banner">
+        <div class="resume-banner-text"><strong>Incomplete processing run detected.</strong> <span id="resume-banner-sub"></span></div>
+        <button id="btn-resume-processing">▶ Resume</button>
+        <button id="btn-discard-run">Discard &amp; start fresh</button>
+      </div>
       <div class="import-body">
       <div class="import-inner">
         <div class="import-title">Turn your Google Takeout<br><i>into a personal archive.</i></div>

@@ -75,7 +75,8 @@ contextBridge.exposeInMainWorld('tt', {
   setWorkingFolder:    (opts)  => ipcRenderer.invoke('settings:set-working-folder', opts),
   browseWorkingFolder: ()      => ipcRenderer.invoke('settings:browse-working-folder'),
 
-  getTripBbox:    (opts) => ipcRenderer.invoke('trips:get-trip-bbox', opts),
+  getTripBbox:      (opts) => ipcRenderer.invoke('trips:get-trip-bbox', opts),
+  getRunState:      ()     => ipcRenderer.invoke('process:get-run-state'),
 
   // ── Places ─────────────────────────────────────────────────────────────────────
   computePlaces:   ()     => ipcRenderer.invoke('places:compute'),
