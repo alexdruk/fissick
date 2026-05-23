@@ -51,22 +51,43 @@ function showView(name) {
   if (sbArchive) sbArchive.style.display = (name === 'results') ? 'flex' : 'none';
 }
 
+// Directly reset all view-results elements that panels may have hidden.
+// Called before loadResults() and from sb-results click.
+// Does NOT call _show*Panel() to avoid height-calculation side-effects
+// on a still-hidden view.
+function _forceResetResultsView() {
+  const vr = document.getElementById('view-results');
+  if (!vr) return;
+  // Restore overflow
+  vr.style.overflow = '';
+  // Restore elements that panels hide
+  const ids = [
+    'photos-page-header', 'photo-list', 'export-bar',
+    'date-range-bar', 'trial-banner', 'select-bar',
+  ];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = '';
+  }
+  const listFooter = vr.querySelector('.list-footer');
+  const filterBar  = vr.querySelector('.filter-bar');
+  const resultsHdr = vr.querySelector('.results-header');
+  if (listFooter) listFooter.style.display = '';
+  if (filterBar)  filterBar.style.display  = '';
+  if (resultsHdr) resultsHdr.style.display = '';
+  // Hide all panels
+  ['trips-panel','albums-panel','places-panel'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('visible');
+  });
+  document.getElementById('albums-breadcrumb')?.classList.remove('visible');
+  PlaceDetailMap.destroy();
+}
+
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 document.getElementById('sb-import').addEventListener('click', () => showView('import'));
 document.getElementById('sb-results').addEventListener('click', async () => {
-  // Explicitly close all panels and restore photos view before loading
-  _showTripsPanel(false);
-  _showAlbumsPanel(false);
-  _showPlacesPanel(false);
-  _showMapPanel(false);
-  // Ensure key elements are visible (may have been hidden by a panel)
-  const _vr = document.getElementById('view-results');
-  if (_vr) {
-    _vr.querySelector('.results-header') && (_vr.querySelector('.results-header').style.display = '');
-    _vr.querySelector('.filter-bar')     && (_vr.querySelector('.filter-bar').style.display     = '');
-  }
-  const _ph = document.getElementById('photos-page-header');
-  if (_ph) _ph.style.display = '';
+  _forceResetResultsView();
   await loadResults();
   showView('results');
   document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
@@ -438,10 +459,7 @@ async function loadResults() {
   const firstTab = document.querySelector('.filter-tab:not([data-filter="map"])');
   if (firstTab) firstTab.classList.add('active');
 
-  _showMapPanel(false); // always start on photo list
-  _showTripsPanel(false);
-  _showAlbumsPanel(false);
-  _showPlacesPanel(false);
+  _forceResetResultsView();
   // Show archive sidebar and activate Photos & Videos by default
   const _sbArchive = document.getElementById('sb-archive');
   if (_sbArchive) _sbArchive.style.display = 'flex';
