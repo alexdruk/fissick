@@ -56,6 +56,15 @@ const TripDetailMap = (() => {
 
     // ── Photo location pins ──────────────────────────────────────────────────
     const withGps = (photos || []).filter(p => p.lat != null && p.lng != null);
+
+    // Preload all thumbnails now — by the time the user clicks a pin,
+    // the image will already be in the browser's memory cache.
+    withGps.forEach(ph => {
+      const src = _encodePath(ph.thumbnail_path || ph.file_path);
+      const preload = new window.Image();
+      preload.src = `local://${src}`;
+    });
+
     withGps.forEach((ph) => {
       bounds.push([ph.lat, ph.lng]);
 
@@ -74,31 +83,25 @@ const TripDetailMap = (() => {
         { direction: 'top', offset: [0, -14], sticky: false }
       );
 
-      // Click popup — thumbnail with loading placeholder + autopan to avoid header clip
       const src = _encodePath(ph.thumbnail_path || ph.file_path);
       const dateStr = ph.date_ts
         ? new Date(ph.date_ts).toLocaleDateString(undefined,
             { year: 'numeric', month: 'short', day: 'numeric' })
         : '';
+
       marker.bindPopup(
         `<div class="tdm-popup">` +
-        `<div class="tdm-popup-loading">Loading…</div>` +
-        `<img class="tdm-popup-img" src="local://${src}"` +
-        ` onload="this.previousElementSibling.style.display='none'"` +
-        ` onerror="this.previousElementSibling.textContent='No preview';this.style.display='none'" alt="">` +
+        `<img class="tdm-popup-img" src="local://${src}" alt="">` +
         `<div class="tdm-popup-name">${_esc(ph.filename)}</div>` +
         (dateStr ? `<div class="tdm-popup-date">${dateStr}</div>` : '') +
         `</div>`,
         {
-          maxWidth: 260,
+          maxWidth:  260,
           className: 'tdm-popup-wrap',
-          autoPan: true,
-          autoPanPaddingTopLeft:     L.point(20, 80),
-          autoPanPaddingBottomRight: L.point(20, 20),
+          autoPan:   false,  // pan animation delays popup display
         }
       );
 
-      // Click on popup image → open lightbox
       marker.on('popupopen', () => {
         const img = marker.getPopup()?.getElement()?.querySelector('.tdm-popup-img');
         if (img && onPhotoClick) {
