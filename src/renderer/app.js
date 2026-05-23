@@ -2184,6 +2184,7 @@ const Trips = (() => {
     const list = document.getElementById('trips-list');
     if (!list || !_allTrips.length) return;
     [...list.querySelectorAll('.trip-card, .trips-no-results')].forEach(el => el.remove());
+    TripMiniMap.reset(); // clear stale map cache before re-render
 
     const q = _searchQuery;
     const filtered = q

@@ -85,6 +85,13 @@ const TripMiniMap = (() => {
     _maps.set(el.id, map);
   }
 
+  // Clear stale map entries — call before re-rendering the trip card list.
+  // Does NOT disconnect the observer so new observe() calls still fire.
+  function reset() {
+    _maps.forEach((map) => { try { map.remove(); } catch {} });
+    _maps.clear();
+  }
+
   function observe(containerId) {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -104,7 +111,7 @@ const TripMiniMap = (() => {
   // Backward-compat stub used by old code
   const TripMaps = { destroyAll, observe };
 
-  return { observe, destroyAll };
+  return { observe, destroyAll, reset };
 
 })();
 
