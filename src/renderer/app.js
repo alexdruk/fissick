@@ -1861,7 +1861,18 @@ document.getElementById('places-sort-select')?.addEventListener('change', (e) =>
 
 // Places: search input
 document.getElementById('places-search')?.addEventListener('input', (e) => {
-  Places.setSearch(e.target.value);
+  const val = e.target.value;
+  Places.setSearch(val);
+  const clearBtn = document.getElementById('places-search-clear');
+  if (clearBtn) clearBtn.style.display = val ? 'block' : 'none';
+});
+
+// Places: search clear button
+document.getElementById('places-search-clear')?.addEventListener('click', () => {
+  const input = document.getElementById('places-search');
+  if (input) { input.value = ''; input.focus(); }
+  document.getElementById('places-search-clear').style.display = 'none';
+  Places.setSearch('');
 });
 
 // sb-places sidebar click
@@ -2310,14 +2321,25 @@ const Trips = (() => {
       `</div>` +
       `<div class="tc-arrow">›</div>`;
 
-    // Double-click on name → inline rename
+    // Double-click on name → inline rename.
+    // Use a click timer so a dblclick on the name doesn't also open detail.
     const nameEl = card.querySelector('.tc-name');
+    let _clickTimer = null;
+    nameEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearTimeout(_clickTimer);
+      _clickTimer = setTimeout(() => { _openDetail(trip); }, 220);
+    });
     nameEl.addEventListener('dblclick', (e) => {
       e.stopPropagation();
+      clearTimeout(_clickTimer);
       _startRename(card, nameEl, trip);
     });
 
-    card.addEventListener('click', () => _openDetail(trip));
+    // Clicks outside the name div open detail immediately
+    card.addEventListener('click', (e) => {
+      if (!e.target.closest('.tc-name')) _openDetail(trip);
+    });
     return card;
   }
 
@@ -2349,8 +2371,15 @@ const Trips = (() => {
       restored.textContent = newName;
       input.replaceWith(restored);
       trip.name = newName;
+      let _rClickTimer = null;
+      restored.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearTimeout(_rClickTimer);
+        _rClickTimer = setTimeout(() => { _openDetail(trip); }, 220);
+      });
       restored.addEventListener('dblclick', (e) => {
         e.stopPropagation();
+        clearTimeout(_rClickTimer);
         _startRename(card, restored, trip);
       });
       try {
