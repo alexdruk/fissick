@@ -972,9 +972,183 @@ function _updateSelectionUI() {
   const hasSelection = n > 0;
   if (csvBtn)    csvBtn.disabled    = !hasSelection;
   if (copyBtn)   copyBtn.disabled   = !hasSelection;
+  // Export by Date: always enabled — exports selection if present, all photos if not
   if (byDateBtn) byDateBtn.disabled = false;
 }
 
+// Select-all / deselect-all
+document.getElementById('select-all-cb').addEventListener('click', async () => {
+  const allCb = document.getElementById('select-all-cb');
+  const isChecked = allCb.classList.contains('checked');
+
+  if (isChecked) {
+    // Deselect all
+    state.selectedPaths.clear();
+    // Uncheck all visible rows
+    document.querySelectorAll('.photo-cb').forEach(cb => cb.classList.remove('checked'));
+  } else {
+    // Select all paths for current filter — fetch from DB (handles > 60 visible rows)
+    const paths = await window.tt.getPhotoPaths({ filter: state.filter, dateFrom: state.dateFrom, dateTo: state.dateTo, ext: state.ext });
+    state.selectedPaths = new Set(paths);
+    // Check all visible rows
+    document.querySelectorAll('#photo-list .photo-row').forEach(row => {
+      row.querySelector('.photo-cb')?.classList.add('checked');
+    });
+  }
+
+  _updateSelectionUI();
+});
+
+// ── Map panel show/hide ────────────────────────────────────────────────────────
+// Sizes the map panel to fill the space below the results-header and filter-bar.
+// Swaps overflow on view-results so the fixed-height map doesn't scroll.
+function _showMapPanel(show) {
+  const viewResults  = document.getElementById('view-results');
+  const photoList    = document.getElementById('photo-list');
+  const listFooter   = viewResults?.querySelector('.list-footer');
+  const trialBanner  = document.getElementById('trial-banner');
+  const mapPanel     = document.getElementById('map-panel');
+  if (!viewResults || !mapPanel) return;
+
+  if (show) {
+    if (photoList)   photoList.style.display   = 'none';
+    if (listFooter)  listFooter.style.display  = 'none';
+    if (trialBanner) trialBanner.style.display = 'none';
+    const selBar = document.getElementById('select-bar');
+    if (selBar) selBar.style.display = 'none';
+    viewResults.style.overflow = 'hidden';
+
+    const usedH = (viewResults.querySelector('.results-header')?.offsetHeight || 0)
+                + (viewResults.querySelector('.filter-bar')?.offsetHeight || 0);
+    mapPanel.style.height = (viewResults.clientHeight - usedH) + 'px';
+    mapPanel.classList.add('visible');
+  } else {
+    mapPanel.classList.remove('visible');
+    viewResults.style.overflow = '';
+    if (photoList)   photoList.style.display   = '';
+    if (listFooter)  listFooter.style.display  = '';
+    const selBar = document.getElementById('select-bar');
+    if (selBar) selBar.style.display = '';
+    // trial banner visibility is managed by showTrialBanner()
+  }
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────────
+function updateSidebarStats({ total, fixed, unmatched, with_gps }) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v != null ? v.toLocaleString() : '—'; };
+  set('sb-total',     total);
+  set('sb-fixed',     fixed);
+  set('sb-unmatched', unmatched);
+  set('sb-gps',       with_gps);
+}
+
+function formatEta(secs) {
+  if (secs < 60)   return secs + 's';
+  if (secs < 3600) return Math.round(secs / 60) + 'm';
+  return Math.floor(secs / 3600) + 'h ' + Math.round((secs % 3600) / 60) + 'm';
+}
+
+// ── Licence & trial ────────────────────────────────────────────────────────────
+async function refreshLicenceStatus() {
+  licenceStatus = await window.tt.getLicenceStatus();
+  return licenceStatus;
+}
+
+function showTrialBanner(show) {
+  const banner = document.getElementById('trial-banner');
+  if (banner) banner.style.display = show ? 'block' : 'none';
+}
+
+function handleTrialLimitHit() {
+  showTrialBanner(true);
+}
+
+document.getElementById('btn-unlock').addEventListener('click', () => {
+  openLicenceModal();
+});
+
+// ── Exports ────────────────────────────────────────────────────────────────────
+
+document.getElementById('btn-export-gpx').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Exporting…';
+  try {
+    const result = await window.tt.exportGpx();
+    if (result.ok) {
+      _exportToast(`GPX saved — ${result.trackPoints.toLocaleString()} track points, ${result.waypoints} named places.`);
+    } else if (!result.canceled) {
+      _exportToast('GPX export failed: ' + result.error, true);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="eb-icon">🗺</span> Location GPX';
+  }
+});
+
+document.getElementById('btn-export-csv').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Exporting…';
+  try {
+    const selectedPaths = [...state.selectedPaths];
+    const result = await window.tt.exportPhotosCsv({ selectedPaths });
+    if (result.ok) {
+      _exportToast(`CSV saved — ${result.count.toLocaleString()} photos.`);
+    } else if (!result.canceled) {
+      _exportToast('CSV export failed: ' + result.error, true);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="eb-icon">📋</span> Photos CSV';
+  }
+});
+
+// KML export
+document.getElementById('btn-export-kml')?.addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true; btn.textContent = 'Exporting…';
+  try {
+    const result = await window.tt.exportKml();
+    if (result.ok) _exportToast(`KML saved — ${result.waypoints.toLocaleString()} places, ${result.trackPoints.toLocaleString()} track points.`);
+    else if (!result.canceled) _exportToast('KML export failed: ' + result.error, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="eb-icon">🌍</span> Location KML';
+  }
+});
+
+// Shared helper — wires progress bar for by-trip and by-date exports
+function _runExportWithProgress(btn, originalLabel) {
+  const progressWrap = document.getElementById('copy-progress-wrap');
+  const barFill      = document.getElementById('copy-progress-bar-fill');
+  const barLabel     = document.getElementById('copy-progress-label');
+  progressWrap.style.display = 'flex';
+  barFill.style.width = '0%';
+  barLabel.textContent = 'Exporting…';
+
+  const unsubProgress = window.tt.onCopyProgress(({ copied, skipped, total, percent }) => {
+    barFill.style.width = percent + '%';
+    barLabel.textContent = `Exporting ${(copied + skipped).toLocaleString()} / ${total.toLocaleString()}…`;
+  });
+
+  const unsubDone = window.tt.onCopyDone(({ copied, skipped, aborted, destDir }) => {
+    unsubProgress();
+    unsubDone();
+    progressWrap.style.display = 'none';
+    btn.disabled = false;
+    btn.innerHTML = originalLabel;
+    const abortBtn = document.getElementById('btn-copy-abort');
+    if (abortBtn) { abortBtn.disabled = false; abortBtn.textContent = 'Abort'; }
+    if (aborted) {
+      _exportToast(`Aborted — ${copied.toLocaleString()} files copied before stopping.`, true);
+    } else {
+      _exportToast(`Done — ${copied.toLocaleString()} copied${skipped > 0 ? `, ${skipped} skipped` : ''}.`);
+    }
+  });
+}
+
+// Export by Date — exports selection if present, otherwise all photos with confirmation
 document.getElementById('btn-export-by-date')?.addEventListener('click', async (e) => {
   const btn = e.currentTarget;
   const selectedPaths = [...state.selectedPaths];
@@ -2684,3 +2858,9 @@ function showDiskWarning(gbFree, folder) {
 }
 
 init();
+// src/renderer/app.js — Fissick renderer
+// Vanilla JS. No frameworks. No build step.
+
+'use strict';
+
+// ── State ─────────────────────────────────────────────────────────────────────
