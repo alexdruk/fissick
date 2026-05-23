@@ -1,36 +1,11 @@
 {
-  "name": "fissick",
+  "name": "fossick-tests",
   "version": "1.0.0",
-  "description": "Fix Google Takeout exports for use in Apple Photos, Lightroom, and NAS",
-  "main": "src/main.js",
   "scripts": {
-    "start": "electron-forge start",
-    "package": "electron-forge package",
-    "make": "electron-forge make",
-    "test-matcher": "node tests/matcher.test.js",
-    "autocommit": "node scripts/autocommit.js",
-    "autocommit:push": "AUTO_PUSH=1 node scripts/autocommit.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "better-sqlite3": "^11.10.0",
-    "exiftool-vendored": "^28.3.1",
-    "ffmpeg-static": "^5.3.0",
-    "local-reverse-geocoder": "^0.16.7",
-    "sharp": "^0.34.5",
-    "unzipper": "^0.12.3"
+    "test": "playwright test --config=playwright.config.js",
+    "test:smoke": "playwright test --config=playwright.config.js tests/smoke.spec.js"
   },
   "devDependencies": {
-    "@electron-forge/cli": "^7.4.0",
-    "@electron-forge/maker-dmg": "^7.4.0",
-    "@electron-forge/maker-squirrel": "^7.4.0",
-    "@electron-forge/maker-zip": "^7.4.0",
-    "@electron-forge/plugin-auto-unpack-natives": "^7.4.0",
-    "@electron-forge/plugin-fuses": "^7.4.0",
-    "@electron/fuses": "^1.8.0",
-    "chokidar-cli": "^3.0.0",
-    "electron": "^31.3.0"
+    "@playwright/test": "^1.52.0"
   }
 }
