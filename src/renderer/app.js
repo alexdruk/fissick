@@ -1177,13 +1177,11 @@ document.getElementById('btn-export-by-date')?.addEventListener('click', async (
   const hasSelection  = selectedPaths.length > 0;
 
   if (!hasSelection) {
-    const totalStats = await window.tt.getStats();
-    const total = totalStats?.total || 0;
+    let total = 0;
+    try { const s = await window.tt.getStats(); total = s?.total || 0; } catch {}
     const confirmed = await window.tt.showConfirmDialog({
       title:   'Export all photos by date?',
-      message: `This will copy all ${total.toLocaleString()} photos into Year/Month folders.
-
-Are you sure?`,
+      message: `This will copy all ${total.toLocaleString()} photos into Year ⁄ Month folders. Are you sure?`,
       buttons: ['Cancel', 'Export All'],
     });
     if (!confirmed) return;
