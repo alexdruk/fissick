@@ -81,18 +81,22 @@ function _forceResetResultsView() {
     if (el) el.classList.remove('visible');
   });
   document.getElementById('albums-breadcrumb')?.classList.remove('visible');
-  PlaceDetailMap.destroy();
+  try { if (typeof PlaceDetailMap !== 'undefined') PlaceDetailMap.destroy(); } catch {}
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 document.getElementById('sb-import').addEventListener('click', () => showView('import'));
 document.getElementById('sb-results').addEventListener('click', async () => {
-  _forceResetResultsView();
-  await loadResults();
-  showView('results');
-  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
-  document.getElementById('sb-results').classList.add('active');
-  document.getElementById('sb-photos')?.classList.add('active');
+  try {
+    _forceResetResultsView();
+    await loadResults();
+    showView('results');
+    document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+    document.getElementById('sb-results').classList.add('active');
+    document.getElementById('sb-photos')?.classList.add('active');
+  } catch (err) {
+    console.error('[sb-results] Error:', err);
+  }
 });
 document.getElementById('sb-photos')?.addEventListener('click', async () => {
   if (state.view !== 'results') {
