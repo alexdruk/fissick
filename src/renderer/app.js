@@ -724,7 +724,7 @@ function renderPhotoRow(photo) {
   return row;
 }
 
-document.getElementById('btn-back-results').addEventListener('click', async () => {
+document.getElementById('btn-back-results')?.addEventListener('click', async () => {
   // Confirm before wiping — processed data takes significant time to regenerate
   const confirmed = await window.tt.showConfirmDialog({
     title:   'Start over?',
