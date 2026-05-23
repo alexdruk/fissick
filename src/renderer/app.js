@@ -2312,7 +2312,7 @@ const Trips = (() => {
       thumbHtml +
       `<div class="tc-flag">${_esc(flag)}</div>` +
       `<div class="tc-body">` +
-        `<div class="tc-name" title="Double-click to rename">${_esc(trip.name)}</div>` +
+        `<div class="tc-name">${_esc(trip.name)}</div>` +
         `<div class="tc-meta">${_esc(dateStr)} · ${days} day${days !== 1 ? 's' : ''}</div>` +
         `<div class="tc-stats">` +
           `<span class="tc-stat">${(trip.photo_count || 0).toLocaleString()} photos</span>` +
@@ -2324,67 +2324,10 @@ const Trips = (() => {
     // Single click anywhere on card → open detail.
     // Double-click specifically on the name → rename.
     // _renaming flag blocks _openDetail while input is active.
-    const nameEl = card.querySelector('.tc-name');
-
-    nameEl.addEventListener('dblclick', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      _startRename(card, nameEl, trip);
-    });
-
-    card.addEventListener('click', () => {
-      if (!card._renaming) _openDetail(trip);
-    });
-
+    card.addEventListener('click', () => _openDetail(trip));
     return card;
   }
 
-  // ── Inline trip rename ──────────────────────────────────────────────────────
-
-  function _startRename(card, nameEl, trip) {
-    card._renaming = true;
-    const original = trip.name;
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'tc-name-input';
-    input.value = original;
-    nameEl.replaceWith(input);
-    requestAnimationFrame(() => { input.focus(); input.select(); });
-
-    async function commit() {
-      const newName = input.value.trim();
-      card._renaming = false;
-      const restored = document.createElement('div');
-      restored.className = 'tc-name';
-      restored.title = 'Double-click to rename';
-      if (!newName || newName === original) {
-        restored.textContent = original;
-        input.replaceWith(restored);
-        return;
-      }
-      restored.textContent = newName;
-      input.replaceWith(restored);
-      trip.name = newName;
-      restored.addEventListener('dblclick', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        _startRename(card, restored, trip);
-      });
-      try {
-        await window.tt.renameTrip({ tripId: trip.id, name: newName });
-      } catch {
-        restored.textContent = original;
-        trip.name = original;
-      }
-    }
-
-    input.addEventListener('blur', commit);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
-      if (e.key === 'Escape') { input.value = original; input.blur(); }
-      e.stopPropagation();
-    });
-  }
 
   // ── Trip detail view ───────────────────────────────────────────────────────
 
