@@ -297,6 +297,82 @@ html, body {
 .log-dim { color: #5a5448; }
 
 
+
+/* ── Places search ───────────────────────── */
+.places-search-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.places-search-input {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 12px 4px 28px;
+  color: var(--ink);
+  outline: none;
+  width: 180px;
+  transition: border-color .1s, width .2s;
+}
+.places-search-input:focus {
+  border-color: var(--acc);
+  width: 220px;
+}
+.places-search-input::placeholder { color: var(--dim); }
+.places-search-icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--dim);
+  pointer-events: none;
+}
+
+/* ── Trip inline rename ──────────────────── */
+.tc-name-input {
+  font-family: var(--serif);
+  font-size: 16px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--acc);
+  border-radius: 3px;
+  padding: 1px 6px;
+  outline: none;
+  width: 100%;
+  max-width: 320px;
+}
+
+/* ── Lightbox navigation arrows ─────────── */
+#lightbox-prev,
+#lightbox-next {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0,0,0,.45);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 10;
+  transition: background .12s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+#lightbox-prev { left: 16px; }
+#lightbox-next { right: 16px; }
+#lightbox-prev:hover,
+#lightbox-next:hover { background: rgba(0,0,0,.7); }
+#lightbox-prev.hidden,
+#lightbox-next.hidden { opacity: 0; pointer-events: none; }
+
 /* ── Archive page headers ─────────────────────────────────────────────── */
 .page-header {
   padding: 20px 28px 16px;
@@ -1940,6 +2016,10 @@ html, body {
               <div class="page-header-title">Places</div>
               <div class="page-header-sub" id="places-list-count"></div>
             </div>
+            <div class="places-search-wrap">
+              <span class="places-search-icon">&#128269;</span>
+              <input type="text" id="places-search" class="places-search-input" placeholder="Search places…">
+            </div>
             <button id="btn-recompute-places" class="places-cta-btn" style="font-size:10px;padding:5px 14px">Recompute</button>
             <div class="trips-sort-wrap">
               <label class="trips-sort-label" for="places-sort-select">Sort</label>
@@ -2054,6 +2134,8 @@ html, body {
 <!-- Lightbox overlay -->
 <div id="lightbox">
   <div id="lightbox-backdrop"></div>
+  <button id="lightbox-prev" class="hidden">&#8249;</button>
+  <button id="lightbox-next" class="hidden">&#8250;</button>
   <div id="lightbox-inner">
     <img id="lightbox-img" alt="">
     <video id="lightbox-video" controls playsinline preload="metadata"></video>

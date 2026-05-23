@@ -2061,6 +2061,14 @@ ipcMain.handle('trips:get-trips', (_event, { offset = 0, limit = 200, orderBy = 
   return { trips, total };
 });
 
+ipcMain.handle('trips:rename', (_event, { tripId, name }) => {
+  if (!tripId || !name || typeof name !== 'string') return { ok: false };
+  const trimmed = name.trim().slice(0, 120); // max 120 chars
+  if (!trimmed) return { ok: false };
+  db.prepare(`UPDATE trips SET name = ? WHERE id = ?`).run(trimmed, tripId);
+  return { ok: true, name: trimmed };
+});
+
 ipcMain.handle('trips:get-trip-bbox', (_event, { tripId }) => {
   const trip = db.prepare(`SELECT center_lat, center_lng FROM trips WHERE id = ?`).get(tripId);
   if (!trip) return null;

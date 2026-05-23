@@ -5,6 +5,7 @@
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let licenceStatus = { licensed: false, trialLimit: 100 };
+let _currentPagePhotos = []; // all photos currently rendered in photo-list, for lightbox navigation
 
 const state = {
   view:        'import',
@@ -595,11 +596,14 @@ async function loadPhotoPage(replace = false) {
     const { photos = [], total = 0 } = result;
     const list = document.getElementById('photo-list');
     if (!list) return;
-    if (replace) list.innerHTML = '';
+    if (replace) { list.innerHTML = ''; _currentPagePhotos = []; }
 
     if (photos.length === 0 && replace) {
       list.innerHTML = '<div style="padding:40px 36px;color:var(--dim);font-size:13px">No photos found.</div>';
     }
+
+    // Track all rendered photos for lightbox ←/→ navigation
+    _currentPagePhotos = replace ? [...photos] : [..._currentPagePhotos, ...photos];
 
     photos.forEach(photo => {
       try { list.appendChild(renderPhotoRow(photo)); }
@@ -717,7 +721,8 @@ function renderPhotoRow(photo) {
   if (clickTarget) {
     clickTarget.addEventListener('click', async (e) => {
       e.stopPropagation();
-      await openLightbox(photo);
+      const idx = _currentPagePhotos.indexOf(photo);
+      await openLightbox(photo, _currentPagePhotos, idx);
     });
   }
 
@@ -1377,7 +1382,24 @@ document.getElementById('btn-generate-thumbs').addEventListener('click', async (
 const HEIC_EXTS  = ['heic','heif'];
 const VIDEO_EXTS_LB = ['mov','mp4','m4v','avi','mkv','3gp'];
 
-async function openLightbox(photo) {
+// ── Lightbox navigation state ─────────────────────────────────────────────────
+// Populated when lightbox opens from a browsable list context
+let _lbPhotos  = [];  // array of photo objects available for ←/→ navigation
+let _lbIndex   = -1;  // index of currently shown photo in _lbPhotos
+
+function _updateLbNavButtons() {
+  const prev = document.getElementById('lightbox-prev');
+  const next = document.getElementById('lightbox-next');
+  if (!prev || !next) return;
+  prev.classList.toggle('hidden', _lbIndex <= 0);
+  next.classList.toggle('hidden', _lbIndex < 0 || _lbIndex >= _lbPhotos.length - 1);
+}
+
+async function openLightbox(photo, photoList, index) {
+  // photoList and index are optional — pass them to enable ←/→ navigation
+  _lbPhotos = photoList || [];
+  _lbIndex  = index != null ? index : (_lbPhotos.length > 0 ? _lbPhotos.indexOf(photo) : -1);
+  _updateLbNavButtons();
   const lb       = document.getElementById('lightbox');
   const lbImg    = document.getElementById('lightbox-img');
   const lbVideo  = document.getElementById('lightbox-video');
@@ -1457,8 +1479,29 @@ document.getElementById('lightbox-back-btn').addEventListener('click', (e) => {
   closeLightbox();
 });
 document.getElementById('lightbox-backdrop').addEventListener('click', closeLightbox);
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { closeLightbox(); closeLicenceModal(); }
+document.getElementById('lightbox-prev')?.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  if (_lbIndex > 0) { _lbIndex--; await openLightbox(_lbPhotos[_lbIndex], _lbPhotos, _lbIndex); }
+});
+document.getElementById('lightbox-next')?.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  if (_lbIndex < _lbPhotos.length - 1) { _lbIndex++; await openLightbox(_lbPhotos[_lbIndex], _lbPhotos, _lbIndex); }
+});
+document.addEventListener('keydown', async (e) => {
+  const lb = document.getElementById('lightbox');
+  if (!lb?.classList.contains('open')) {
+    if (e.key === 'Escape') closeLicenceModal();
+    return;
+  }
+  if (e.key === 'Escape') { closeLightbox(); return; }
+  if (e.key === 'ArrowLeft'  && _lbIndex > 0) {
+    _lbIndex--;
+    await openLightbox(_lbPhotos[_lbIndex], _lbPhotos, _lbIndex);
+  }
+  if (e.key === 'ArrowRight' && _lbIndex >= 0 && _lbIndex < _lbPhotos.length - 1) {
+    _lbIndex++;
+    await openLightbox(_lbPhotos[_lbIndex], _lbPhotos, _lbIndex);
+  }
 });
 
 // ── Copy abort ─────────────────────────────────────────────────────────────────
@@ -1692,16 +1735,25 @@ const Places = (() => {
     }
   }
 
+  let _searchQuery = '';
+
   function _renderGrid() {
     const grid = document.getElementById('places-grid');
     if (!grid) return;
+    const filtered = _searchQuery
+      ? _places.filter(p => p.name.toLowerCase().includes(_searchQuery))
+      : _places;
     const countEl = document.getElementById('places-list-count');
-    if (countEl) countEl.textContent = _places.length.toLocaleString() + ' place' + (_places.length !== 1 ? 's' : '');
-    // Update trips page header sub when trips loads
-    const tripsSubEl = document.getElementById('trips-page-sub');
-    if (tripsSubEl) tripsSubEl.textContent = '';
+    if (countEl) {
+      const suffix = _searchQuery ? ` matching “${_searchQuery}”` : '';
+      countEl.textContent = filtered.length.toLocaleString() + ' place' + (filtered.length !== 1 ? 's' : '') + suffix;
+    }
     grid.innerHTML = '';
-    for (const place of _places) grid.appendChild(_renderCard(place));
+    if (filtered.length === 0 && _searchQuery) {
+      grid.innerHTML = '<div style="padding:40px 20px;color:var(--dim);font-family:var(--mono);font-size:11px">No places match that search.</div>';
+      return;
+    }
+    for (const place of filtered) grid.appendChild(_renderCard(place));
   }
 
   function _renderCard(place) {
@@ -1769,8 +1821,16 @@ const Places = (() => {
     _renderGrid();
   }
 
+  function setSearch(q) {
+    _searchQuery = q.toLowerCase().trim();
+    _renderGrid();
+  }
+
   function reset() {
     _places = [];
+    _searchQuery = '';
+    const searchEl = document.getElementById('places-search');
+    if (searchEl) searchEl.value = '';
     state.placesComputed = false;
     PlaceDetailMap.destroy();
   }
@@ -1779,7 +1839,7 @@ const Places = (() => {
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  return { onTabActivated, computePlaces, applySort, reset };
+  return { onTabActivated, computePlaces, applySort, reset, setSearch };
 })();
 
 // Places: compute + recompute buttons
@@ -1797,6 +1857,11 @@ document.getElementById('btn-places-back')?.addEventListener('click', async () =
 // Places: sort selector
 document.getElementById('places-sort-select')?.addEventListener('change', (e) => {
   Places.applySort(e.target.value);
+});
+
+// Places: search input
+document.getElementById('places-search')?.addEventListener('input', (e) => {
+  Places.setSearch(e.target.value);
 });
 
 // sb-places sidebar click
@@ -2236,7 +2301,7 @@ const Trips = (() => {
       thumbHtml +
       `<div class="tc-flag">${_esc(flag)}</div>` +
       `<div class="tc-body">` +
-        `<div class="tc-name">${_esc(trip.name)}</div>` +
+        `<div class="tc-name" title="Double-click to rename">${_esc(trip.name)}</div>` +
         `<div class="tc-meta">${_esc(dateStr)} · ${days} day${days !== 1 ? 's' : ''}</div>` +
         `<div class="tc-stats">` +
           `<span class="tc-stat">${(trip.photo_count || 0).toLocaleString()} photos</span>` +
@@ -2244,8 +2309,64 @@ const Trips = (() => {
         `</div>` +
       `</div>` +
       `<div class="tc-arrow">›</div>`;
+
+    // Double-click on name → inline rename
+    const nameEl = card.querySelector('.tc-name');
+    nameEl.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      _startRename(card, nameEl, trip);
+    });
+
     card.addEventListener('click', () => _openDetail(trip));
     return card;
+  }
+
+  // ── Inline trip rename ──────────────────────────────────────────────────────
+
+  function _startRename(card, nameEl, trip) {
+    const original = trip.name;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'tc-name-input';
+    input.value = original;
+    nameEl.replaceWith(input);
+    input.select();
+
+    const blockClick = (e) => e.stopPropagation();
+    card.addEventListener('click', blockClick, { capture: true });
+
+    async function commit() {
+      const newName = input.value.trim();
+      card.removeEventListener('click', blockClick, { capture: true });
+      const restored = document.createElement('div');
+      restored.className = 'tc-name';
+      restored.title = 'Double-click to rename';
+      if (!newName || newName === original) {
+        restored.textContent = original;
+        input.replaceWith(restored);
+        return;
+      }
+      restored.textContent = newName;
+      input.replaceWith(restored);
+      trip.name = newName;
+      restored.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        _startRename(card, restored, trip);
+      });
+      try {
+        await window.tt.renameTrip({ tripId: trip.id, name: newName });
+      } catch {
+        restored.textContent = original;
+        trip.name = original;
+      }
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { input.value = original; input.blur(); }
+      e.stopPropagation();
+    });
   }
 
   // ── Trip detail view ───────────────────────────────────────────────────────
