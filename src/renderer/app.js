@@ -2184,7 +2184,6 @@ const Trips = (() => {
     const list = document.getElementById('trips-list');
     if (!list || !_allTrips.length) return;
     [...list.querySelectorAll('.trip-card, .trips-no-results')].forEach(el => el.remove());
-    TripMiniMap.reset(); // clear stale map cache before re-render
 
     const q = _searchQuery;
     const filtered = q
@@ -2213,10 +2212,6 @@ const Trips = (() => {
     }
 
     for (const trip of filtered) list.appendChild(_renderTripCard(trip));
-    // Register mini-maps for lazy loading via IntersectionObserver
-    requestAnimationFrame(() => {
-      filtered.forEach(t => TripMiniMap.observe(`tc-map-${t.id}`));
-    });
   }
 
   function _renderTripCard(trip) {
@@ -2231,9 +2226,14 @@ const Trips = (() => {
     const dateStr = sameDayStr ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
     const flag   = _flag(trip.country_code);
     const distStr = trip.distance_km != null ? `${Math.round(trip.distance_km).toLocaleString()} km from home` : '';
-    const mapId  = `tc-map-${trip.id}`;
+    const thumbSrc = trip.cover_thumbnail || trip.cover_file_path;
+    const thumbHtml = thumbSrc
+      ? `<img class="tc-thumb" src="local://${thumbSrc}" alt="" loading="lazy"` +
+        ` onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`  +
+        `<div class="tc-thumb-placeholder" style="display:none">✈️</div>`
+      : `<div class="tc-thumb-placeholder">✈️</div>`;
     card.innerHTML =
-      `<div class="tc-map" id="${mapId}" data-trip-id="${trip.id}"></div>` +
+      thumbHtml +
       `<div class="tc-flag">${_esc(flag)}</div>` +
       `<div class="tc-body">` +
         `<div class="tc-name">${_esc(trip.name)}</div>` +

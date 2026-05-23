@@ -2048,8 +2048,15 @@ ipcMain.handle('trips:get-trips', (_event, { offset = 0, limit = 200, orderBy = 
     'distance_km DESC, start_ts ASC', 'distance_km ASC, start_ts ASC',
   ];
   const order = SAFE.includes(orderBy) ? orderBy : 'start_ts ASC';
-  const trips = db.prepare(`SELECT * FROM trips ORDER BY ${order} LIMIT ? OFFSET ?`)
-    .all(limit, offset);
+  const trips = db.prepare(`
+    SELECT t.*,
+           p.thumbnail_path AS cover_thumbnail,
+           p.file_path      AS cover_file_path
+    FROM trips t
+    LEFT JOIN photos p ON p.trip_id = t.id AND p.thumbnail_path IS NOT NULL
+    GROUP BY t.id
+    ORDER BY ${order} LIMIT ? OFFSET ?
+  `).all(limit, offset);
   const { n: total } = db.prepare(`SELECT COUNT(*) AS n FROM trips`).get();
   return { trips, total };
 });
