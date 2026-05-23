@@ -1863,58 +1863,6 @@ ipcMain.handle('export:kml', async () => {
   }
 });
 
-// ── Export: Photos by Trip ────────────────────────────────────────────────────
-ipcMain.handle('export:by-trip', async () => {
-  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-    title:       'Choose Export Destination Folder',
-    buttonLabel: 'Export Here',
-    properties:  ['openDirectory', 'createDirectory'],
-  });
-  if (canceled || !filePaths?.[0]) return { ok: false, canceled: true };
-  const destRoot = filePaths[0];
-
-  const photos = db.prepare(`SELECT file_path, filename, trip_id FROM photos ORDER BY date_ts ASC`).all();
-  const tripNames = new Map(db.prepare(`SELECT id, name FROM trips`).all().map(t => [t.id, t.name]));
-  const total = photos.length;
-
-  // Async fire-and-forget — progress streamed via events, abort via flag
-  ;(async () => {
-    copyAbortRequested = false;
-    let copied = 0, skipped = 0;
-    const dirCache = new Set();
-
-    for (const photo of photos) {
-      if (copyAbortRequested) break;
-      const tripName   = photo.trip_id ? tripNames.get(photo.trip_id) : null;
-      const folderName = tripName
-        ? tripName.replace(/[/\:*?"<>|]/g, '-').trim().slice(0, 80)
-        : '_Unassigned';
-      const tripDir = path.join(destRoot, 'Trips', folderName);
-      if (!dirCache.has(tripDir)) { fs.mkdirSync(tripDir, { recursive: true }); dirCache.add(tripDir); }
-      const dest = path.join(tripDir, photo.filename);
-      try {
-        if (!fs.existsSync(dest)) { await fs.promises.copyFile(photo.file_path, dest); copied++; }
-        else skipped++;
-      } catch { skipped++; }
-
-      if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('export:copy-progress', {
-          copied, skipped, failed: 0, total,
-          percent: Math.round(((copied + skipped) / total) * 100),
-        });
-      }
-    }
-
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('export:copy-done', {
-        copied, skipped, failed: 0, total, destDir: destRoot, aborted: copyAbortRequested,
-      });
-    }
-  })();
-
-  return { ok: true, total };
-});
-
 // ── Export: Photos by Date (Year/Month) ───────────────────────────────────────
 ipcMain.handle('export:by-date', async (_event, { selectedPaths = [] } = {}) => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
