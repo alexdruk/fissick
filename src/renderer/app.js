@@ -2212,7 +2212,10 @@ const Trips = (() => {
     }
 
     for (const trip of filtered) list.appendChild(_renderTripCard(trip));
-    // TripMaps.observe removed — mini-map thumbnails not implemented
+    // Register mini-maps for lazy loading via IntersectionObserver
+    requestAnimationFrame(() => {
+      filtered.forEach(t => TripMiniMap.observe(`tc-map-${t.id}`));
+    });
   }
 
   function _renderTripCard(trip) {
@@ -2227,17 +2230,19 @@ const Trips = (() => {
     const dateStr = sameDayStr ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
     const flag   = _flag(trip.country_code);
     const distStr = trip.distance_km != null ? `${Math.round(trip.distance_km).toLocaleString()} km from home` : '';
-    card.innerHTML = `
-      <div class="tc-flag">${_esc(flag)}</div>
-      <div class="tc-body">
-        <div class="tc-name">${_esc(trip.name)}</div>
-        <div class="tc-meta">${_esc(dateStr)} · ${days} day${days !== 1 ? 's' : ''}</div>
-        <div class="tc-stats">
-          <span class="tc-stat">${(trip.photo_count || 0).toLocaleString()} photos</span>
-          ${distStr ? `<span class="tc-stat tc-stat-dist" title="Distance from the nearest home zone">${_esc(distStr)}</span>` : ''}
-        </div>
-      </div>
-      <div class="tc-arrow">›</div>`;
+    const mapId  = `tc-map-${trip.id}`;
+    card.innerHTML =
+      `<div class="tc-map" id="${mapId}" data-trip-id="${trip.id}"></div>` +
+      `<div class="tc-flag">${_esc(flag)}</div>` +
+      `<div class="tc-body">` +
+        `<div class="tc-name">${_esc(trip.name)}</div>` +
+        `<div class="tc-meta">${_esc(dateStr)} · ${days} day${days !== 1 ? 's' : ''}</div>` +
+        `<div class="tc-stats">` +
+          `<span class="tc-stat">${(trip.photo_count || 0).toLocaleString()} photos</span>` +
+          (distStr ? `<span class="tc-stat tc-stat-dist" title="Distance from the nearest home zone">${_esc(distStr)}</span>` : '') +
+        `</div>` +
+      `</div>` +
+      `<div class="tc-arrow">›</div>`;
     card.addEventListener('click', () => _openDetail(trip));
     return card;
   }
@@ -2261,7 +2266,7 @@ const Trips = (() => {
   function _closeDetail() {
     TripDetailMap.destroy();
     _activeTrip = null;
-    _loadAndRenderTrips();
+    _loadAndRenderTrips(); // re-renders cards and re-registers mini-maps
   }
 
   // ── Computing state ─────────────────────────────────────────────────────────

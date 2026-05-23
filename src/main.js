@@ -2054,6 +2054,18 @@ ipcMain.handle('trips:get-trips', (_event, { offset = 0, limit = 200, orderBy = 
   return { trips, total };
 });
 
+ipcMain.handle('trips:get-trip-bbox', (_event, { tripId }) => {
+  const trip = db.prepare(`SELECT center_lat, center_lng FROM trips WHERE id = ?`).get(tripId);
+  if (!trip) return null;
+  // Return up to 30 photo coords — enough to fit bounds, cheap query
+  const photos = db.prepare(`
+    SELECT lat, lng FROM photos
+    WHERE trip_id = ? AND lat IS NOT NULL AND lng IS NOT NULL
+    ORDER BY date_ts ASC LIMIT 30
+  `).all(tripId);
+  return { center_lat: trip.center_lat, center_lng: trip.center_lng, photos };
+});
+
 ipcMain.handle('trips:get-trip-detail', (_event, { tripId, pointLimit = 500 }) => {
   const trip = db.prepare(`SELECT * FROM trips WHERE id = ?`).get(tripId);
   if (!trip) return null;
