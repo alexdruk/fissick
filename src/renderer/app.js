@@ -2321,45 +2321,39 @@ const Trips = (() => {
       `</div>` +
       `<div class="tc-arrow">›</div>`;
 
-    // Double-click on name → inline rename.
-    // Use a click timer so a dblclick on the name doesn't also open detail.
+    // Single click anywhere on card → open detail.
+    // Double-click specifically on the name → rename.
+    // _renaming flag blocks _openDetail while input is active.
     const nameEl = card.querySelector('.tc-name');
-    let _clickTimer = null;
-    nameEl.addEventListener('click', (e) => {
-      e.stopPropagation();
-      clearTimeout(_clickTimer);
-      _clickTimer = setTimeout(() => { _openDetail(trip); }, 220);
-    });
+
     nameEl.addEventListener('dblclick', (e) => {
       e.stopPropagation();
-      clearTimeout(_clickTimer);
+      e.preventDefault();
       _startRename(card, nameEl, trip);
     });
 
-    // Clicks outside the name div open detail immediately
-    card.addEventListener('click', (e) => {
-      if (!e.target.closest('.tc-name')) _openDetail(trip);
+    card.addEventListener('click', () => {
+      if (!card._renaming) _openDetail(trip);
     });
+
     return card;
   }
 
   // ── Inline trip rename ──────────────────────────────────────────────────────
 
   function _startRename(card, nameEl, trip) {
+    card._renaming = true;
     const original = trip.name;
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'tc-name-input';
     input.value = original;
     nameEl.replaceWith(input);
-    input.select();
-
-    const blockClick = (e) => e.stopPropagation();
-    card.addEventListener('click', blockClick, { capture: true });
+    requestAnimationFrame(() => { input.focus(); input.select(); });
 
     async function commit() {
       const newName = input.value.trim();
-      card.removeEventListener('click', blockClick, { capture: true });
+      card._renaming = false;
       const restored = document.createElement('div');
       restored.className = 'tc-name';
       restored.title = 'Double-click to rename';
@@ -2371,15 +2365,9 @@ const Trips = (() => {
       restored.textContent = newName;
       input.replaceWith(restored);
       trip.name = newName;
-      let _rClickTimer = null;
-      restored.addEventListener('click', (e) => {
-        e.stopPropagation();
-        clearTimeout(_rClickTimer);
-        _rClickTimer = setTimeout(() => { _openDetail(trip); }, 220);
-      });
       restored.addEventListener('dblclick', (e) => {
         e.stopPropagation();
-        clearTimeout(_rClickTimer);
+        e.preventDefault();
         _startRename(card, restored, trip);
       });
       try {
