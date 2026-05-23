@@ -1,12 +1,30 @@
 const { _electron: electron } = require('@playwright/test');
 const path = require('path');
+const fs   = require('fs');
 
-// Fossick project root
-const APP_ROOT = path.resolve(__dirname, '../../..');
+// Walk up from this file until we find package.json with "electron" in dependencies
+function findProjectRoot() {
+  let dir = __dirname;
+  for (let i = 0; i < 6; i++) {
+    dir = path.dirname(dir);
+    const pkg = path.join(dir, 'package.json');
+    if (fs.existsSync(pkg)) {
+      try {
+        const p = JSON.parse(fs.readFileSync(pkg, 'utf8'));
+        const deps = { ...p.dependencies, ...p.devDependencies };
+        if (deps.electron) return dir;
+      } catch {}
+    }
+  }
+  throw new Error('Could not find Fossick project root (no package.json with electron dep)');
+}
+
+const APP_ROOT = findProjectRoot();
 
 async function launchApp() {
-  // Find Electron binary from the app's own node_modules
-  const electronPath = require(path.join(APP_ROOT, 'node_modules/electron'));
+  // Get electron binary path using the project's own electron module
+  const electronModule = path.join(APP_ROOT, 'node_modules', 'electron');
+  const electronPath   = require(electronModule);
 
   const app = await electron.launch({
     executablePath: electronPath,
@@ -14,7 +32,7 @@ async function launchApp() {
     env: {
       ...process.env,
       FOSSICK_DEV: '1',
-      NODE_ENV: 'test',
+      NODE_ENV:    'test',
     },
   });
 
