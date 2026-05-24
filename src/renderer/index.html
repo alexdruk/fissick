@@ -1058,6 +1058,52 @@ html, body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 
+/* Help button in titlebar */
+.tb-help-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--mu);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: border-color .1s, color .1s;
+  margin-left: 10px;
+}
+.tb-help-btn:hover { border-color: var(--border2); color: var(--ink); }
+
+/* Import nav shortcuts — below the feature pills */
+.import-nav-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.import-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 7px 16px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  transition: border-color .1s, color .1s, background .1s;
+}
+.import-nav-btn:hover { border-color: var(--acc-bdr); color: var(--acc); background: var(--acc-lt); }
+.import-nav-btn .nav-gear { font-size: 12px; opacity: .7; }
+
 /* ════════════════════════════════════════
    ALBUMS PANEL
 
@@ -1667,6 +1713,7 @@ html, body {
   <div id="titlebar">
     <span class="tb-logo">Fissick<span class="tb-dot">.</span></span>
     <span style="font-family:var(--mono);font-size:9px;color:var(--dim);margin-left:8px">v22</span>
+    <button class="tb-help-btn" id="btn-help">Help</button>
     <span class="tb-phase" id="tb-phase">Import</span>
     <button id="btn-settings" title="Settings" style="-webkit-app-region:no-drag;background:none;border:none;cursor:pointer;color:var(--dim);font-size:14px;padding:4px 8px;border-radius:4px;margin-left:8px;line-height:1" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--dim)'">⚙</button>
   </div>
@@ -1721,6 +1768,11 @@ html, body {
           <span class="import-feat">✈️ Trips</span>
           <span class="import-feat">📚 Albums</span>
           <span class="import-feat">📍 Places</span>
+        </div>
+
+        <div class="import-nav-row">
+          <button class="import-nav-btn" id="btn-nav-import">Import <span class="nav-gear">⚙</span></button>
+          <button class="import-nav-btn" id="btn-nav-results">Results <span class="nav-gear">⚙</span></button>
         </div>
 
         <div class="source-section">
@@ -2229,5 +2281,18 @@ html, body {
 <script src="tripsMap.js"></script>
 <script src="placesMap.js"></script>
 <script src="app.js"></script>
+<script>
+  // Help button → opens help window via IPC
+  document.getElementById('btn-help').addEventListener('click', () => {
+    if (window.tt && window.tt.openHelp) window.tt.openHelp('getting-started');
+  });
+  // Import/Results nav shortcuts → delegate to sidebar items (app.js handles the rest)
+  document.getElementById('btn-nav-import').addEventListener('click', () => {
+    document.getElementById('sb-import').click();
+  });
+  document.getElementById('btn-nav-results').addEventListener('click', () => {
+    document.getElementById('sb-results').click();
+  });
+</script>
 </body>
 </html>
