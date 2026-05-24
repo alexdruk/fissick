@@ -484,19 +484,8 @@ ipcMain.handle('dialog:select-zips', async () => {
   return result.canceled ? [] : result.filePaths;
 });
 
-ipcMain.handle('dialog:select-folder', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Select your Takeout folder',
-    message: 'Select the folder that contains "Google Photos" — usually named "Takeout" or "fake-takeout"',
-    buttonLabel: 'Select This Folder',
-    properties: ['openDirectory', 'createDirectory'],
-  });
-  console.log('[main] dialog:select-folder result:', result);
-  return result.canceled ? null : result.filePaths[0];
-});
-
 // Start processing — spawns Worker Thread, forwards events to renderer
-ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder, isResume = false }) => {
+ipcMain.handle('process:start', (_event, { zipPaths, isResume = false }) => {
   if (activeWorker) {
     activeWorker.terminate();
     activeWorker = null;
@@ -528,22 +517,18 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder, isResume =
   // - If folder only (pre-extracted) → use it directly, no extraction needed
   let extractTo = null;
   if (zipPaths && zipPaths.length > 0) {
-    if (extractedFolder) {
-      extractTo = extractedFolder; // user designated this as the destination
-    } else {
-      // Use working folder if set, otherwise fall back to Documents
-      const baseDir = getWorkingFolder() || app.getPath('documents');
-      // Clean up previous auto-extraction folders in the same base dir
-      try {
-        const entries = fs.readdirSync(baseDir);
-        for (const e of entries) {
-          if (e.startsWith('fissick-extracted-')) {
-            fs.rmSync(path.join(baseDir, e), { recursive: true, force: true });
-          }
+    // Use working folder if set, otherwise fall back to Documents
+    const baseDir = getWorkingFolder() || app.getPath('documents');
+    // Clean up previous auto-extraction folders in the same base dir
+    try {
+      const entries = fs.readdirSync(baseDir);
+      for (const e of entries) {
+        if (e.startsWith('fissick-extracted-')) {
+          fs.rmSync(path.join(baseDir, e), { recursive: true, force: true });
         }
-      } catch {}
-      extractTo = path.join(baseDir, 'fissick-extracted-' + Date.now());
-    }
+      }
+    } catch {}
+    extractTo = path.join(baseDir, 'fissick-extracted-' + Date.now());
     fs.mkdirSync(extractTo, { recursive: true });
   }
 
@@ -555,7 +540,7 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder, isResume =
 
   // Save run state so we can resume if interrupted
   db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_state', ?)").run(
-    JSON.stringify({ zipPaths: zipPaths || [], extractedFolder: extractedFolder || null, tempDir: extractTo || '' })
+    JSON.stringify({ zipPaths: zipPaths || [], tempDir: extractTo || '' })
   );
 
   isProcessing = true;
@@ -564,7 +549,7 @@ ipcMain.handle('process:start', (_event, { zipPaths, extractedFolder, isResume =
   activeWorker = new Worker(workerPath, {
     workerData: {
       zipPaths:        zipPaths || [],
-      extractedFolder: zipPaths && zipPaths.length > 0 ? null : (extractedFolder || null),
+
       tempDir:         extractTo || '',
       dbPath:          db.name,
       trialLimit:      (licensed || devMode) ? null : 100,  // null = unlimited

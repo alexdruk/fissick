@@ -8,7 +8,6 @@ contextBridge.exposeInMainWorld('tt', {
 
   // ── Dialogs ────────────────────────────────────────────────────────────────
   selectZips:   () => ipcRenderer.invoke('dialog:select-zips'),
-  selectFolder: () => ipcRenderer.invoke('dialog:select-folder'),
 
   // ── Processing ─────────────────────────────────────────────────────────────
   startProcessing:  (opts) => ipcRenderer.invoke('process:start', opts),

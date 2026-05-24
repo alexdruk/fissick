@@ -144,7 +144,6 @@ document.getElementById('sb-trips').addEventListener('click', async () => {
 // ── Import view ────────────────────────────────────────────────────────────────
 const btnStart       = document.getElementById('btn-start');
 const zipFeedback    = document.getElementById('zip-feedback');
-const folderFeedback = document.getElementById('folder-feedback');
 
 function showFeedback(el, text, isError = false) {
   el.textContent = text;
@@ -153,7 +152,7 @@ function showFeedback(el, text, isError = false) {
 }
 
 function updateStartButton() {
-  const ready = state.source?.zipPaths?.length > 0 || !!state.source?.extractedFolder;
+  const ready = state.source?.zipPaths?.length > 0;
   btnStart.style.display = ready ? 'block' : 'none';
 }
 
@@ -167,33 +166,11 @@ document.getElementById('btn-select-zips').addEventListener('click', async (e) =
   }
 });
 
-document.getElementById('btn-select-folder').addEventListener('click', async () => {
-  const folder = await window.tt.selectFolder();
-  if (folder) {
-    state.source = { ...state.source, extractedFolder: folder };
-    showFeedback(folderFeedback, '📁 ' + folder);
-    updateStartButton();
-  }
-});
-
-document.getElementById('btn-manual-path').addEventListener('click', () => {
-  const val = document.getElementById('manual-path-input').value.trim();
-  if (val) {
-    state.source = { ...state.source, extractedFolder: val };
-    showFeedback(folderFeedback, '📁 ' + val);
-    updateStartButton();
-  }
-});
-
-document.getElementById('manual-path-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') document.getElementById('btn-manual-path').click();
-});
-
 btnStart.addEventListener('click', startProcessing);
 
 // ── Processing ─────────────────────────────────────────────────────────────────
 async function startProcessing() {
-  if (!state.source?.zipPaths?.length && !state.source?.extractedFolder) return;
+  if (!state.source?.zipPaths?.length) return;
   state.processing = true;
 
   // Always wipe previous results before starting a new run
@@ -234,8 +211,7 @@ async function startProcessing() {
   state.unsubscribe = window.tt.onProcessEvent(handleProcessEvent);
 
   await window.tt.startProcessing({
-    zipPaths:        state.source.zipPaths        || [],
-    extractedFolder: state.source.extractedFolder || null,
+    zipPaths: state.source.zipPaths || [],
   });
 }
 
@@ -288,9 +264,8 @@ async function resumeProcessing(savedRunState) {
   state.unsubscribe = window.tt.onProcessEvent(handleProcessEvent);
 
   await window.tt.startProcessing({
-    zipPaths:        savedRunState.zipPaths        || [],
-    extractedFolder: savedRunState.extractedFolder || savedRunState.tempDir || null,
-    isResume:        true,
+    zipPaths: savedRunState.zipPaths || [],
+    isResume: true,
   });
 }
 
@@ -812,8 +787,6 @@ document.getElementById('btn-back-results')?.addEventListener('click', async () 
   if (toMonthSelBack)   toMonthSelBack.value   = '';
   document.getElementById('dr-clear').style.display = 'none';
   showFeedback(zipFeedback, '');
-  showFeedback(folderFeedback, '');
-  document.getElementById('manual-path-input').value = '';
   btnStart.style.display = 'none';
   updateSidebarStats({ total: 0, fixed: 0, unmatched: 0, with_gps: 0 });
   _showMapPanel(false);

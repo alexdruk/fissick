@@ -232,10 +232,6 @@ html, body {
 
 .source-section  { margin-bottom: 6px; }
 .source-label    { font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); margin-bottom: 7px; }
-.source-divider  { font-family: var(--mono); font-size: 10px; color: var(--dim); text-align: center; padding: 10px 0; position: relative; }
-.source-divider::before, .source-divider::after { content: ''; position: absolute; top: 50%; width: calc(50% - 20px); height: 1px; background: var(--border); }
-.source-divider::before { left: 0; }
-.source-divider::after  { right: 0; }
 .source-feedback       { margin-top: 7px; font-family: var(--mono); font-size: 10px; color: var(--green); line-height: 1.6; }
 .source-feedback.error { color: var(--red); }
 
@@ -1810,22 +1806,6 @@ html, body {
             <span class="s-text"><strong>Select ZIP files</strong><span>takeout-…-001.zip, -002.zip, etc.</span></span>
           </button>
           <div id="zip-feedback" class="source-feedback" style="display:none"></div>
-        </div>
-
-        <div class="source-divider">or</div>
-
-        <div class="source-section">
-          <div class="source-label">Already extracted</div>
-          <button class="source-btn" id="btn-select-folder">
-            <span class="s-icon">📁</span>
-            <span class="s-text"><strong>Select folder</strong><span>The folder containing “Google Photos”</span></span>
-          </button>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <input id="manual-path-input" type="text" placeholder="or paste path: /Users/alex/Documents/fake-takeout"
-              style="flex:1;font-family:var(--mono);font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:7px 10px;color:var(--ink);outline:none">
-            <button id="btn-manual-path" style="font-family:var(--mono);font-size:10px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;padding:7px 12px;cursor:pointer;white-space:nowrap;color:var(--ink)">Use path</button>
-          </div>
-          <div id="folder-feedback" class="source-feedback" style="display:none"></div>
         </div>
 
         <button id="btn-start">Process archive →</button>
