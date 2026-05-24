@@ -1077,6 +1077,36 @@ html, body {
 }
 .tb-help-btn:hover { border-color: var(--border2); color: var(--ink); }
 
+/* View header bar — IMPORT / RESULTS label + gear, sits at page-header level */
+.vhb {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.vhb-label {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--dim);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.vhb-gear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  -webkit-app-region: no-drag;
+}
+.vhb-gear:hover { color: var(--ink); background: var(--panel2); }
+
 /* Import nav shortcuts — below the feature pills */
 .import-nav-row {
   display: flex;
@@ -1712,9 +1742,8 @@ html, body {
   <!-- Titlebar -->
   <div id="titlebar">
     <span class="tb-logo">Fissick<span class="tb-dot">.</span></span>
-    <span style="font-family:var(--mono);font-size:9px;color:var(--dim);margin-left:8px">v22</span>
-    <button class="tb-help-btn" id="btn-help">Help</button>
     <span class="tb-phase" id="tb-phase">Import</span>
+    <button class="tb-help-btn" id="btn-help">Help</button>
     <button id="btn-settings" title="Settings" style="-webkit-app-region:no-drag;background:none;border:none;cursor:pointer;color:var(--dim);font-size:14px;padding:4px 8px;border-radius:4px;margin-left:8px;line-height:1" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--dim)'">⚙</button>
   </div>
 
@@ -1751,7 +1780,10 @@ html, body {
 
     <!-- ══ IMPORT ══ -->
     <div class="view active" id="view-import">
-      <div class="import-eyebrow-bar">Fossick · Local-first archive tool</div>
+      <div class="vhb">
+        <span class="vhb-label">Import</span>
+        <button class="vhb-gear" id="btn-nav-import" title="Settings">⚙</button>
+      </div>
       <div id="resume-banner">
         <div class="resume-banner-text"><strong>Incomplete processing run detected.</strong> <span id="resume-banner-sub"></span></div>
         <button id="btn-resume-processing">▶ Resume</button>
@@ -1768,11 +1800,6 @@ html, body {
           <span class="import-feat">✈️ Trips</span>
           <span class="import-feat">📚 Albums</span>
           <span class="import-feat">📍 Places</span>
-        </div>
-
-        <div class="import-nav-row">
-          <button class="import-nav-btn" id="btn-nav-import">Import <span class="nav-gear">⚙</span></button>
-          <button class="import-nav-btn" id="btn-nav-results">Results <span class="nav-gear">⚙</span></button>
         </div>
 
         <div class="source-section">
@@ -1848,9 +1875,15 @@ html, body {
 
     <!-- ══ RESULTS ══ -->
     <div class="view" id="view-results">
-      <div class="page-header" id="photos-page-header">
-        <div class="page-header-title">Photos &amp; Videos</div>
-        <div class="page-header-sub" id="photos-page-sub">processing complete</div>
+      <div class="page-header" id="photos-page-header" style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div class="page-header-title">Photos &amp; Videos</div>
+          <div class="page-header-sub" id="photos-page-sub">processing complete</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <span class="vhb-label">Results</span>
+          <button class="vhb-gear" id="btn-nav-results" title="Settings">⚙</button>
+        </div>
       </div>
       <div class="results-header">
         <div class="results-stats" id="results-stats-row"></div>
