@@ -1780,9 +1780,8 @@ html, body {
 
     <!-- ══ IMPORT ══ -->
     <div class="view active" id="view-import">
-      <div class="vhb">
-        <span class="vhb-label">Import</span>
-        <button class="vhb-gear" id="btn-nav-import" title="Settings">⚙</button>
+      <div class="vhb" style="justify-content:flex-end">
+        <button class="vhb-gear" id="btn-nav-import" style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px">Import Setting</button>
       </div>
       <div id="resume-banner">
         <div class="resume-banner-text"><strong>Incomplete processing run detected.</strong> <span id="resume-banner-sub"></span></div>
@@ -1875,15 +1874,9 @@ html, body {
 
     <!-- ══ RESULTS ══ -->
     <div class="view" id="view-results">
-      <div class="page-header" id="photos-page-header" style="display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div class="page-header-title">Photos &amp; Videos</div>
-          <div class="page-header-sub" id="photos-page-sub">processing complete</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px">
-          <span class="vhb-label">Results</span>
-          <button class="vhb-gear" id="btn-nav-results" title="Settings">⚙</button>
-        </div>
+      <div class="page-header" id="photos-page-header">
+        <div class="page-header-title">Photos &amp; Videos</div>
+        <div class="page-header-sub" id="photos-page-sub">processing complete</div>
       </div>
       <div class="results-header">
         <div class="results-stats" id="results-stats-row"></div>
@@ -2319,12 +2312,9 @@ html, body {
   document.getElementById('btn-help').addEventListener('click', () => {
     if (window.tt && window.tt.openHelp) window.tt.openHelp('getting-started');
   });
-  // Import/Results nav shortcuts → delegate to sidebar items (app.js handles the rest)
+  // Import Setting button → opens Settings panel
   document.getElementById('btn-nav-import').addEventListener('click', () => {
     document.getElementById('sb-import').click();
-  });
-  document.getElementById('btn-nav-results').addEventListener('click', () => {
-    document.getElementById('sb-results').click();
   });
 </script>
 </body>
