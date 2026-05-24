@@ -1744,7 +1744,6 @@ html, body {
     <span class="tb-logo">Fissick<span class="tb-dot">.</span></span>
     <span class="tb-phase" id="tb-phase">Import</span>
     <button class="tb-help-btn" id="btn-help">Help</button>
-    <button id="btn-settings" title="Settings" style="-webkit-app-region:no-drag;background:none;border:none;cursor:pointer;color:var(--dim);font-size:14px;padding:4px 8px;border-radius:4px;margin-left:8px;line-height:1" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--dim)'">⚙</button>
   </div>
 
   <!-- Sidebar -->
@@ -1780,8 +1779,9 @@ html, body {
 
     <!-- ══ IMPORT ══ -->
     <div class="view active" id="view-import">
-      <div class="vhb" style="justify-content:flex-end">
+      <div class="vhb" style="justify-content:flex-end;gap:6px">
         <button class="vhb-gear" id="btn-nav-import" style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px">Import Setting</button>
+        <button id="btn-settings" title="Settings" style="-webkit-app-region:no-drag;background:none;border:none;cursor:pointer;color:var(--dim);font-size:14px;padding:4px 8px;border-radius:4px;line-height:1" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--dim)'">⚙</button>
       </div>
       <div id="resume-banner">
         <div class="resume-banner-text"><strong>Incomplete processing run detected.</strong> <span id="resume-banner-sub"></span></div>
