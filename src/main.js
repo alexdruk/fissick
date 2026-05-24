@@ -2460,5 +2460,18 @@ ipcMain.handle('licence:deactivate', () => {
   db.prepare("DELETE FROM settings WHERE key = 'licence_key'").run();
   return { ok: true };
 });
+
+ipcMain.handle('help:open', (_e, page = 'getting-started') => {
+  const helpFile = path.join(__dirname, 'renderer', 'help', `${page}.html`);
+  const helpWin = new BrowserWindow({
+    width: 1020,
+    height: 740,
+    title: 'Fossick Help',
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+  helpWin.loadFile(helpFile);
+  helpWin.setMenu(null);
+  return true;
+});
 // src/main.js — Electron main process
 // Handles: window creation, IPC, SQLite init, local-file protocol, Worker lifecycle

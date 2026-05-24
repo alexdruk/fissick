@@ -119,4 +119,7 @@ contextBridge.exposeInMainWorld('tt', {
     return () => ipcRenderer.removeListener('trips:name-update', handler);
   },
 
+  // ── Help window ────────────────────────────────────────────────────────────
+  openHelp: (page = 'getting-started') => ipcRenderer.invoke('help:open', page),
+
 });
