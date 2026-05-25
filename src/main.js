@@ -119,16 +119,23 @@ async function _photonSearch(query) {
   } catch { return null; }
 }
 
-// Nominatim rate-limited fetch helper
+// Nominatim rate-limited fetch helper — returns parsed JSON or null
 async function _nominatimFetch(url) {
   const now  = Date.now();
   const wait = 1100 - (now - _lastNominatimReq);
   if (wait > 0) await new Promise(r => setTimeout(r, wait));
   _lastNominatimReq = Date.now();
-  return fetch(url, {
-    headers: { 'User-Agent': 'Fossick/1.0', 'Accept-Language': 'en' },
-    signal: AbortSignal.timeout(8000),
-  });
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Fossick/1.0', 'Accept-Language': 'en' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { ok: false, status: res.status, data: null };
+    const data = await res.json();
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: null, data: null };
+  }
 }
 
 // ── Haversine distance (km) — used by cluster detection ──────────────────────
@@ -2033,11 +2040,10 @@ ipcMain.handle('trips:geocode-batch', async (_event, { points }) => {
       } else {
         // Fallback: Nominatim
         try {
-          const res = await _nominatimFetch(
+          const { ok, data } = await _nominatimFetch(
             `https://nominatim.openstreetmap.org/reverse?lat=${p.lat}&lon=${p.lng}&format=json&accept-language=en`
           );
-          if (res.ok) {
-            const data  = await res.json();
+          if (ok && data) {
             const addr  = data.address || {};
             const city  = addr.city || addr.town || addr.village || addr.county || addr.state || '';
             country     = addr.country || null;
@@ -2138,11 +2144,10 @@ async function _geocodeTripNames(items) {
       } else {
         // Fallback: Nominatim (rate-limited)
         try {
-          const res = await _nominatimFetch(
+          const { ok, data } = await _nominatimFetch(
             `https://nominatim.openstreetmap.org/reverse?lat=${item.lat}&lon=${item.lng}&format=json&accept-language=en`
           );
-          if (res.ok) {
-            const data = await res.json();
+          if (ok && data) {
             const addr  = data.address || {};
             const city  = addr.city || addr.town || addr.village || addr.county || addr.state || '';
             country     = addr.country || null;
@@ -2267,12 +2272,11 @@ ipcMain.handle('trips:search-location', async (_event, { query }) => {
   console.log('[fossick] searchLocation: Photon failed, trying Nominatim…');
   try {
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&accept-language=en`;
-    const res = await _nominatimFetch(url);
-    if (!res.ok) {
-      console.error(`[fossick] searchLocation Nominatim status: ${res.status}`);
-      return { results: [], error: `Search unavailable (HTTP ${res.status})` };
+    const { ok, status, data } = await _nominatimFetch(url);
+    if (!ok) {
+      console.error(`[fossick] searchLocation Nominatim status: ${status}`);
+      return { results: [], error: `Search unavailable (HTTP ${status})` };
     }
-    const data = await res.json();
     console.log(`[fossick] searchLocation via Nominatim: ${data.length} results`);
     return {
       results: data.map(r => ({
