@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Exporting — Fossick Help</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f2ec;--panel:#faf8f4;--panel2:#ede9e0;--border:#d5cfc2;--border2:#c0b9a8;
+  --ink:#1c1a14;--mu:#6b6454;--dim:#a09880;--acc:#b85c2c;--acc-lt:#f5ede6;--acc-border:#e8c4aa;
+  --green:#2a6b3c;--green-lt:#e8f4ec;--green-border:#b0d8bc;
+  --blue:#1e4d7a;--blue-lt:#e6eff8;--blue-border:#a8c8e8;
+  --amber:#8a6010;--amber-lt:#fdf5e0;--amber-border:#e8d080;
+  --red:#952020;--red-lt:#fbeaea;--red-border:#e8a8a8;
+  --serif:'DM Serif Display',Georgia,serif;
+  --mono:'DM Mono',monospace;
+  --sans:'DM Sans',sans-serif;
+}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);display:flex;min-height:100vh;font-size:14px;line-height:1.6}
+
+/* SIDEBAR */
+#sb{width:240px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sb-brand{padding:20px 18px 14px;border-bottom:1px solid var(--border)}
+.sb-logo{font-family:var(--serif);font-size:19px;color:var(--ink);margin-bottom:2px;letter-spacing:-.01em}
+.sb-sub{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.12em;text-transform:uppercase}
+.sb-cat{padding:14px 18px 4px;font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 18px;cursor:pointer;color:var(--mu);border-left:3px solid transparent;font-size:12.5px;text-decoration:none;transition:all .12s}
+.nav-item:hover{color:var(--ink);background:var(--panel2)}
+.nav-item.on{color:var(--acc);background:var(--acc-lt);border-left-color:var(--acc);font-weight:500}
+.nav-num{font-family:var(--mono);font-size:9px;color:var(--dim);flex-shrink:0;width:18px}
+.sb-footer{margin-top:auto;padding:14px 18px;border-top:1px solid var(--border);font-family:var(--mono);font-size:9px;color:var(--dim);line-height:1.7}
+
+/* MAIN */
+#main{flex:1;max-width:800px;padding:44px 56px 100px}
+
+/* HERO */
+.hero{margin-bottom:36px;padding-bottom:28px;border-bottom:2px solid var(--border)}
+.hero-eye{font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--acc);margin-bottom:10px}
+.hero-title{font-family:var(--serif);font-size:32px;color:var(--ink);margin-bottom:8px;line-height:1.2}
+.hero-title i{color:var(--acc);font-style:italic}
+.hero-sub{font-size:14.5px;color:var(--mu);font-weight:300;line-height:1.7;max-width:540px}
+
+/* TYPOGRAPHY */
+h2{font-family:var(--serif);font-size:20px;color:var(--ink);margin:36px 0 12px;padding-bottom:9px;border-bottom:1px solid var(--border)}
+h2:first-of-type{margin-top:0}
+h3{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--acc);margin:22px 0 8px}
+p{color:var(--mu);line-height:1.8;margin-bottom:12px;font-size:13.5px}
+p strong{color:var(--ink);font-weight:500}
+p:last-child{margin-bottom:0}
+ul,ol{padding-left:0;margin-bottom:14px}
+li{color:var(--mu);font-size:13.5px;line-height:1.8;list-style:none;padding:3px 0 3px 20px;position:relative}
+ul li::before{content:'—';position:absolute;left:0;color:var(--acc);font-family:var(--mono);font-size:11px}
+ol{counter-reset:ol}
+ol li{counter-increment:ol}
+ol li::before{content:counter(ol);position:absolute;left:0;font-family:var(--mono);font-size:10px;color:var(--acc);font-weight:500;top:5px}
+
+/* BOXES */
+.box{border-radius:6px;padding:14px 18px;margin:16px 0;border:1px solid}
+.box-label{font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px}
+.box p{font-size:13px;line-height:1.7;margin-bottom:0}
+.box p+p{margin-top:8px}
+.box.green{background:var(--green-lt);border-color:var(--green-border)}
+.box.green .box-label{color:var(--green)}
+.box.amber{background:var(--amber-lt);border-color:var(--amber-border)}
+.box.amber .box-label{color:var(--amber)}
+.box.blue{background:var(--blue-lt);border-color:var(--blue-border)}
+.box.blue .box-label{color:var(--blue)}
+.box.red{background:var(--red-lt);border-color:var(--red-border)}
+.box.red .box-label{color:var(--red)}
+.box.acc{background:var(--acc-lt);border-color:var(--acc-border)}
+.box.acc .box-label{color:var(--acc)}
+
+/* SCREENSHOT PLACEHOLDER */
+.screenshot{background:var(--panel);border:2px dashed var(--border2);border-radius:8px;padding:28px 20px;margin:20px 0;text-align:center}
+.screenshot-label{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--acc);margin-bottom:6px}
+.screenshot-desc{font-size:12.5px;color:var(--mu);line-height:1.6;max-width:480px;margin:0 auto}
+.screenshot img{max-width:100%;border-radius:6px;border:1px solid var(--border);display:block;margin:0 auto}
+
+/* TAG PILLS */
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.tag{font-family:var(--mono);font-size:10px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid}
+.tag-green{background:var(--green-lt);color:var(--green);border-color:var(--green-border)}
+.tag-amber{background:var(--amber-lt);color:var(--amber);border-color:var(--amber-border)}
+.tag-blue{background:var(--blue-lt);color:var(--blue);border-color:var(--blue-border)}
+.tag-red{background:var(--red-lt);color:var(--red);border-color:var(--red-border)}
+.tag-dim{background:var(--panel2);color:var(--dim);border-color:var(--border)}
+.tag-acc{background:var(--acc-lt);color:var(--acc);border-color:var(--acc-border)}
+
+/* TABLE */
+table{width:100%;border-collapse:collapse;font-size:13px;margin:14px 0}
+th{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);text-align:left;padding:8px 12px;border-bottom:2px solid var(--border2);background:var(--panel2)}
+td{padding:9px 12px;border-bottom:1px solid var(--border);color:var(--mu);vertical-align:top;line-height:1.55}
+tr:last-child td{border-bottom:none}
+td strong{color:var(--ink);font-weight:500}
+
+/* STEP FLOW */
+.steps{margin:14px 0}
+.step{display:flex;gap:16px;padding:14px 0;border-bottom:1px solid var(--border)}
+.step:last-child{border-bottom:none}
+.step-num{font-family:var(--serif);font-size:22px;color:var(--acc-border);flex-shrink:0;width:28px;line-height:1.1}
+.step-body h4{font-family:var(--sans);font-size:13.5px;font-weight:500;color:var(--ink);margin-bottom:4px}
+.step-body p{font-size:13px;margin:0}
+
+/* KBD */
+kbd{font-family:var(--mono);font-size:11px;background:var(--panel2);border:1px solid var(--border2);border-radius:4px;padding:2px 7px;color:var(--ink);box-shadow:0 1px 0 var(--border2)}
+
+/* DIVIDER */
+.div{height:1px;background:var(--border);margin:32px 0}
+
+code{font-family:var(--mono);font-size:11.5px;background:var(--panel2);padding:1px 6px;border-radius:3px;color:var(--acc)}
+</style>
+</head>
+<body>
+
+<div id="sb">
+  <div class="sb-brand">
+    <div class="sb-logo">Fossick</div>
+    <div class="sb-sub">Help &amp; Documentation</div>
+  </div>
+  <div class="sb-cat">Help Topics</div>
+  <a class="nav-item" href="getting-started.html"><span class="nav-num">01</span>Getting Started</a>
+  <a class="nav-item" href="import.html"><span class="nav-num">02</span>Import</a>
+  <a class="nav-item" href="processing.html"><span class="nav-num">03</span>Processing</a>
+  <a class="nav-item" href="photos.html"><span class="nav-num">04</span>Photos & Videos</a>
+  <a class="nav-item" href="trips.html"><span class="nav-num">05</span>Trips</a>
+  <a class="nav-item" href="albums.html"><span class="nav-num">06</span>Albums</a>
+  <a class="nav-item" href="places.html"><span class="nav-num">07</span>Places</a>
+  <a class="nav-item on" href="exporting.html"><span class="nav-num">08</span>Exporting</a>
+  <a class="nav-item" href="troubleshooting.html"><span class="nav-num">09</span>Troubleshooting</a>
+  <a class="nav-item" href="privacy.html"><span class="nav-num">10</span>Privacy</a>
+  <div class="sb-footer">
+    Fossick v1.0<br>
+    support@fossick.app
+  </div>
+</div>
+
+<div id="main">
+  <div class="hero">
+    <div class="hero-eye">Help · 08</div>
+    <div class="hero-title">Exporting</div>
+    <p class="hero-sub">Every export option explained — what each produces and when to use it</p>
+  </div>
+  
+<h2>Export options</h2>
+<p>Fossick's exports are designed for the most common things people want to do after fixing their Google Photos library. You'll find the export options in the <strong>Export</strong> menu at the top of the window, or by right-clicking a selection in the Photos &amp; Videos view.</p>
+
+
+<div class="screenshot">
+  <img src="images/export-menu.png" alt="Export menu">
+</div>
+
+<h2>Photos CSV</h2>
+<p><strong>What it produces:</strong> A spreadsheet (CSV file) listing every photo with its filename, date, GPS coordinates, status, and album membership.</p>
+<p><strong>When to use it:</strong> Useful if you want to audit your library in Excel or Numbers, find all photos that are missing dates, or share a list of your photos with someone.</p>
+<p>If you have photos selected, the CSV will contain only the selected photos. If nothing is selected, it contains all photos.</p>
+
+<h2>Copy Fixed Files</h2>
+<p><strong>What it produces:</strong> A folder containing copies of your selected photos, with the corrected EXIF metadata already written into each file.</p>
+<p><strong>When to use it:</strong> When you want to move specific photos to a new location — a NAS, external drive, or a folder for a specific project — and want the EXIF already fixed before copying.</p>
+<p>Fossick will ask you to choose a destination folder. The copied files will be flat (all in one folder). If you want a dated folder structure, use <em>Export by Date</em> instead.</p>
+
+<h2>Export by Date</h2>
+<p><strong>What it produces:</strong> A dated folder structure of all your fixed photos, organised as <code>Year / Month / </code>. For example: <code>2022 / August / IMG_1234.jpg</code>.</p>
+<p><strong>When to use it:</strong> This is the format Apple Photos and Lightroom understand for bulk imports. Drag the exported folder into either app and your photos will be organised chronologically with correct dates from the start.</p>
+
+<div class="box green">
+  <div class="box-label">Importing to Apple Photos</div>
+  <p>After Export by Date, open Apple Photos, go to <strong>File → Import</strong>, and choose the exported folder. All your photos will import in chronological order with correct dates. Fossick's EXIF fix means you won't see them all lumped together on today's date.</p>
+</div>
+
+<div class="box blue">
+  <div class="box-label">Selection behaviour</div>
+  <p>If photos are selected before choosing Export by Date, only the selected photos are exported. If nothing is selected, Fossick shows a confirmation dialog asking if you want to export all photos — useful as a reminder when you're processing your entire library.</p>
+</div>
+
+
+<h2>Location GPX</h2>
+<p><strong>What it produces:</strong> A GPX file containing your location history from Google Takeout.</p>
+<p><strong>When to use it:</strong> GPX is the standard format for GPS tracks, supported by mapping apps, fitness apps (Strava, Garmin Connect, AllTrails), and navigation tools. Use this if you want to visualise your location history in a third-party app or keep it as a portable backup.</p>
+
+<h2>Location KML</h2>
+<p><strong>What it produces:</strong> A KML file containing your location history.</p>
+<p><strong>When to use it:</strong> KML is supported by Google Earth, Apple Maps, and most GIS tools. It's the format to use if you want to view your location history in Google Earth or share it with someone who uses mapping software.</p>
+
+<h2>Interactive Map HTML</h2>
+<p><strong>What it produces:</strong> A self-contained HTML file that shows your location history as an interactive map. You can open it in any web browser, zoom and pan, and filter by date — with no internet connection required.</p>
+<p><strong>When to use it:</strong> The easiest way to share your location map with someone, or to keep a portable copy you can open anywhere without installing anything. Great as a personal keepsake — a record of everywhere you've been.</p>
+
+</div>
+
+</body>
+</html>

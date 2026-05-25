@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Import — Fossick Help</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f2ec;--panel:#faf8f4;--panel2:#ede9e0;--border:#d5cfc2;--border2:#c0b9a8;
+  --ink:#1c1a14;--mu:#6b6454;--dim:#a09880;--acc:#b85c2c;--acc-lt:#f5ede6;--acc-border:#e8c4aa;
+  --green:#2a6b3c;--green-lt:#e8f4ec;--green-border:#b0d8bc;
+  --blue:#1e4d7a;--blue-lt:#e6eff8;--blue-border:#a8c8e8;
+  --amber:#8a6010;--amber-lt:#fdf5e0;--amber-border:#e8d080;
+  --red:#952020;--red-lt:#fbeaea;--red-border:#e8a8a8;
+  --serif:'DM Serif Display',Georgia,serif;
+  --mono:'DM Mono',monospace;
+  --sans:'DM Sans',sans-serif;
+}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);display:flex;min-height:100vh;font-size:14px;line-height:1.6}
+#sb{width:240px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sb-brand{padding:20px 18px 14px;border-bottom:1px solid var(--border)}
+.sb-logo{font-family:var(--serif);font-size:19px;color:var(--ink);margin-bottom:2px;letter-spacing:-.01em}
+.sb-sub{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.12em;text-transform:uppercase}
+.sb-cat{padding:14px 18px 4px;font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 18px;cursor:pointer;color:var(--mu);border-left:3px solid transparent;font-size:12.5px;text-decoration:none;transition:all .12s}
+.nav-item:hover{color:var(--ink);background:var(--panel2)}
+.nav-item.on{color:var(--acc);background:var(--acc-lt);border-left-color:var(--acc);font-weight:500}
+.nav-num{font-family:var(--mono);font-size:9px;color:var(--dim);flex-shrink:0;width:18px}
+.sb-footer{margin-top:auto;padding:14px 18px;border-top:1px solid var(--border);font-family:var(--mono);font-size:9px;color:var(--dim);line-height:1.7}
+#main{flex:1;max-width:800px;padding:44px 56px 100px}
+.hero{margin-bottom:36px;padding-bottom:28px;border-bottom:2px solid var(--border)}
+.hero-eye{font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--acc);margin-bottom:10px}
+.hero-title{font-family:var(--serif);font-size:32px;color:var(--ink);margin-bottom:8px;line-height:1.2}
+.hero-sub{font-size:14.5px;color:var(--mu);font-weight:300;line-height:1.7;max-width:540px}
+h2{font-family:var(--serif);font-size:20px;color:var(--ink);margin:36px 0 12px;padding-bottom:9px;border-bottom:1px solid var(--border)}
+h2:first-of-type{margin-top:0}
+h3{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--acc);margin:22px 0 8px}
+p{color:var(--mu);line-height:1.8;margin-bottom:12px;font-size:13.5px}
+p strong{color:var(--ink);font-weight:500}
+p:last-child{margin-bottom:0}
+ul,ol{padding-left:0;margin-bottom:14px}
+li{color:var(--mu);font-size:13.5px;line-height:1.8;list-style:none;padding:3px 0 3px 20px;position:relative}
+ul li::before{content:'—';position:absolute;left:0;color:var(--acc);font-family:var(--mono);font-size:11px}
+ol{counter-reset:ol}
+ol li{counter-increment:ol}
+ol li::before{content:counter(ol);position:absolute;left:0;font-family:var(--mono);font-size:10px;color:var(--acc);font-weight:500;top:5px}
+.box{border-radius:6px;padding:14px 18px;margin:16px 0;border:1px solid}
+.box-label{font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px}
+.box p{font-size:13px;line-height:1.7;margin-bottom:0}
+.box p+p{margin-top:8px}
+.box.green{background:var(--green-lt);border-color:var(--green-border)}
+.box.green .box-label{color:var(--green)}
+.box.amber{background:var(--amber-lt);border-color:var(--amber-border)}
+.box.amber .box-label{color:var(--amber)}
+.box.blue{background:var(--blue-lt);border-color:var(--blue-border)}
+.box.blue .box-label{color:var(--blue)}
+.box.red{background:var(--red-lt);border-color:var(--red-border)}
+.box.red .box-label{color:var(--red)}
+.screenshot{background:var(--panel);border:2px dashed var(--border2);border-radius:8px;padding:28px 20px;margin:20px 0;text-align:center}
+.screenshot-label{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--acc);margin-bottom:6px}
+.screenshot-desc{font-size:12.5px;color:var(--mu);line-height:1.6;max-width:480px;margin:0 auto}
+.screenshot img{max-width:100%;border-radius:6px;border:1px solid var(--border);display:block;margin:0 auto}
+.steps{margin:14px 0}
+.step{display:flex;gap:16px;padding:14px 0;border-bottom:1px solid var(--border)}
+.step:last-child{border-bottom:none}
+.step-num{font-family:var(--serif);font-size:22px;color:var(--acc-border);flex-shrink:0;width:28px;line-height:1.1}
+.step-body h4{font-family:var(--sans);font-size:13.5px;font-weight:500;color:var(--ink);margin-bottom:4px}
+.step-body p{font-size:13px;margin:0}
+kbd{font-family:var(--mono);font-size:11px;background:var(--panel2);border:1px solid var(--border2);border-radius:4px;padding:2px 7px;color:var(--ink);box-shadow:0 1px 0 var(--border2)}
+code{font-family:var(--mono);font-size:11.5px;background:var(--panel2);padding:1px 6px;border-radius:3px;color:var(--acc)}
+</style>
+</head>
+<body>
+
+<div id="sb">
+  <div class="sb-brand">
+    <div class="sb-logo">Fossick</div>
+    <div class="sb-sub">Help &amp; Documentation</div>
+  </div>
+  <div class="sb-cat">Help Topics</div>
+  <a class="nav-item" href="getting-started.html"><span class="nav-num">01</span>Getting Started</a>
+  <a class="nav-item on" href="import.html"><span class="nav-num">02</span>Import</a>
+  <a class="nav-item" href="processing.html"><span class="nav-num">03</span>Processing</a>
+  <a class="nav-item" href="photos.html"><span class="nav-num">04</span>Photos &amp; Videos</a>
+  <a class="nav-item" href="trips.html"><span class="nav-num">05</span>Trips</a>
+  <a class="nav-item" href="albums.html"><span class="nav-num">06</span>Albums</a>
+  <a class="nav-item" href="places.html"><span class="nav-num">07</span>Places</a>
+  <a class="nav-item" href="exporting.html"><span class="nav-num">08</span>Exporting</a>
+  <a class="nav-item" href="troubleshooting.html"><span class="nav-num">09</span>Troubleshooting</a>
+  <a class="nav-item" href="privacy.html"><span class="nav-num">10</span>Privacy</a>
+  <div class="sb-footer">
+    Fossick v1.0<br>
+    support@fossick.app
+  </div>
+</div>
+
+<div id="main">
+  <div class="hero">
+    <div class="hero-eye">Help · 02</div>
+    <div class="hero-title">Import</div>
+    <p class="hero-sub">Before Fossick can do anything, your Google Takeout files need to be downloaded to your computer. Here's how.</p>
+  </div>
+
+  <h2>Step 1 — Download your files from Google</h2>
+  <p>Fossick works with the ZIP files that Google sends you when you request a Takeout export. <strong>These files must be downloaded to your computer first</strong> — Fossick reads them directly from your hard drive and never connects to Google on your behalf.</p>
+  <p>If you haven't requested your export yet, go to <strong>takeout.google.com</strong>, select Google Photos (and optionally Location History), and follow the steps. Google will email you one or more download links when your archive is ready.</p>
+
+  <div class="box red">
+    <div class="box-label">Be prepared for large downloads</div>
+    <p>A Google Photos library built up over many years can easily be <strong>50–200 GB</strong> across 10 or more ZIP files. Each file needs to be fully downloaded before Fossick can process it. Make sure you have enough free space on the drive where you're saving them — you'll need roughly the same amount of space again for Fossick's working files.</p>
+    <p>Download all the ZIPs before opening Fossick. They are all part of one export and need to be imported together.</p>
+  </div>
+
+  <h2>Step 2 — Select your ZIP files in Fossick</h2>
+  <p>Once all your ZIP files are downloaded to a folder on your computer, open Fossick. On the Import screen, click <strong>Select ZIP files</strong> and choose all the ZIPs at once — hold <kbd>⌘</kbd> (Mac) or <kbd>Ctrl</kbd> (Windows) to select multiple files.</p>
+  <p>You don't need to unzip anything. Fossick reads the ZIPs directly.</p>
+
+  <div class="screenshot">
+    <img src="images/import-screen.png" alt="Import screen">
+  </div>
+
+  <div class="box blue">
+    <div class="box-label">Multi-part exports</div>
+    <p>Google splits large libraries across multiple ZIP files — typically named <code>takeout-…-001.zip</code>, <code>-002.zip</code>, and so on. These belong together. Select all of them at once; Fossick merges them automatically. Processing them one at a time will give incomplete results.</p>
+  </div>
+
+  <h2>What Fossick looks for inside your export</h2>
+  <p>Google Takeout organises your photos into folders like <strong>Photos from 2022</strong>, <strong>Photos from 2023</strong>, and so on, plus a folder for each album. Alongside every photo there is a small companion file — called a sidecar — that contains the original date and GPS coordinates that Google strips from the photo itself.</p>
+  <p>Fossick scans all of this automatically. You don't need to reorganise or rename anything before importing.</p>
+
+  <h2>Including your location history</h2>
+  <p>If you also exported <strong>Location History</strong> from Google, Fossick will find it automatically inside the Takeout folder. Location history powers the Trips and Places views. If you didn't include it, those sections will still work using the GPS coordinates stored inside your photos — but the location track will only cover moments when you were actively taking photos.</p>
+
+  <div class="box amber">
+    <div class="box-label">Missing some years?</div>
+    <p>If photos from certain years don't appear, you may need to request a new export — Google Takeout sometimes omits photos from large libraries in a single run. You can import a second export into Fossick and it will merge the results without duplicating photos.</p>
+  </div>
+
+  <h2>Import Setting — choosing where Fossick stores its files</h2>
+  <p>When Fossick processes your photos it creates a database, generates thumbnails, and extracts your ZIP archives. By default these working files are stored inside your Documents folder. If your main drive is nearly full, or if you'd prefer Fossick to use an external drive, you can change this before you start.</p>
+  <p>Click <strong>Import Setting</strong> (top right of the Import screen, next to the ⚙ gear icon) to open the Settings panel.</p>
+
+  <div class="screenshot">
+   <img src="images/import-setting-panel.png" alt="Import Setting panel">
+  </div>
+
+  <p>The Settings panel shows three things:</p>
+  <ul>
+    <li><strong>Working Folder</strong> — the drive and folder where Fossick stores its database and thumbnails. Click <strong>Choose folder…</strong> to move this to a different location, for example an external drive with more free space.</li>
+    <li><strong>Current Paths</strong> — the exact paths to the database file and the thumbnails folder, so you know precisely where Fossick's files live.</li>
+    <li><strong>Free Space</strong> — how much space is available on the selected drive. As a rough guide, allow at least 10–15% of your photo library size for Fossick's working files.</li>
+  </ul>
+  <p>Click <strong>Reset to default</strong> to move everything back to the Documents folder. Close the panel with the <strong>×</strong> button in the top right corner.</p>
+
+  <div class="box green">
+    <div class="box-label">Change this before processing, not after</div>
+    <p>If you want to use a different working folder, set it before clicking Start Processing. Moving the folder after processing has started will interrupt the run.</p>
+  </div>
+
+  <h2>Ready to process</h2>
+  <p>Once your ZIP files are selected and your working folder is set, click <strong>Process archive →</strong> to begin. See <a href="processing.html">Processing</a> for what happens next and how long to expect it to take.</p>
+
+</div>
+</body>
+</html>
