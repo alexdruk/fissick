@@ -8,6 +8,9 @@ const Database = require('better-sqlite3');
 const os = require('os');
 const fs = require('fs');
 
+const devMode = process.env.FOSSICK_DEV === '1';
+const log = (...a) => { if (devMode) console.log(...a); };
+
 // ── Working folder prefs ──────────────────────────────────────────────────────
 // Stored in ~/.fossick-prefs.json — separate from the SQLite DB because the
 // DB itself may live inside the working folder.
@@ -57,7 +60,7 @@ function _initLocalGeocoder() {
       geocoder.init({ load: { admin1: true, admin2: false, admin3And4: false, alternateNames: false } }, () => {
         _localGeocoder      = geocoder;
         _localGeocoderReady = true;
-        console.log('[fossick] local-reverse-geocoder ready');
+        log('[fossick] local-reverse-geocoder ready');
         resolve(true);
       });
     } catch (err) {
@@ -540,8 +543,7 @@ ipcMain.handle('process:start', (_event, { zipPaths, isResume = false }) => {
   }
 
   // Licence check — always enforce TRIAL_LIMIT for now (Gumroad not yet active)
-  const devMode = process.env.FOSSICK_DEV === '1';
-  if (devMode) console.log('[dev] Dev mode — trial limit still enforced');
+  if (devMode) log('[dev] Dev mode — trial limit still enforced');
 
   // Save run state so we can resume if interrupted
   db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_state', ?)").run(
@@ -1084,9 +1086,9 @@ ipcMain.handle('util:heic-to-jpeg', async (_event, { filePath }) => {
 // ── Generate thumbnails (post-processing pass) ────────────────────────────────
 ipcMain.handle('util:generate-thumbnails', async () => {
   try {
-  console.log('[fossick] generate-thumbnails: handler called');
+  log('[fossick] generate-thumbnails: handler called');
   const thumbDir = ensureThumbDir();
-  console.log(`[fossick] thumbDir: ${thumbDir}`);
+  log(`[fossick] thumbDir: ${thumbDir}`);
   fs.mkdirSync(thumbDir, { recursive: true });
   const { execFile } = require('child_process');
   const { promisify } = require('util');
@@ -1109,12 +1111,12 @@ ipcMain.handle('util:generate-thumbnails', async () => {
     }
   });
   resetMany(staleRows);
-  console.log(`[fossick] thumbnails: reset ${resetCount} stale, checking remaining`);
+  log(`[fossick] thumbnails: reset ${resetCount} stale, checking remaining`);
 
   const photos = db.prepare(
     `SELECT id, file_path, filename FROM photos WHERE thumbnail_path IS NULL`
   ).all();
-  console.log(`[fossick] thumbnails: ${photos.length} photos to process`);
+  log(`[fossick] thumbnails: ${photos.length} photos to process`);
 
   const total = photos.length;
   let done = 0, generated = 0, failed = 0;
@@ -1133,7 +1135,7 @@ ipcMain.handle('util:generate-thumbnails', async () => {
     if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
       update.run(thumbPath, photo.id);
       generated++;
-      console.log(`[thumb-skip] already exists: ${photo.filename}`);
+      log(`[thumb-skip] already exists: ${photo.filename}`);
     } else if (SHARP_EXTS.has(ext) && sharp) {
       try {
         await sharp(photo.file_path)
@@ -1141,7 +1143,7 @@ ipcMain.handle('util:generate-thumbnails', async () => {
           .rotate().jpeg({ quality: 72 }).toFile(thumbPath);
         update.run(thumbPath, photo.id);
         generated++;
-      } catch (err) { console.log(`[thumb-sharp] ${photo.filename}: ${err.message}`); failed++; }
+      } catch (err) { log(`[thumb-sharp] ${photo.filename}: ${err.message}`); failed++; }
 
     } else if (SIPS_EXTS.has(ext) && process.platform === 'darwin') {
       try {
@@ -1151,8 +1153,8 @@ ipcMain.handle('util:generate-thumbnails', async () => {
         ], { timeout: 20000 });
         if (fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 100) {
           update.run(thumbPath, photo.id); generated++;
-        } else { console.log(`[thumb-sips] empty: ${photo.filename}`); failed++; }
-      } catch (err) { console.log(`[thumb-sips] ${photo.filename}: ${err.message}`); failed++; }
+        } else { log(`[thumb-sips] empty: ${photo.filename}`); failed++; }
+      } catch (err) { log(`[thumb-sips] ${photo.filename}: ${err.message}`); failed++; }
 
     } else if (VIDEO_EXTS.has(ext) && process.platform === 'darwin') {
       try {
@@ -1167,7 +1169,7 @@ ipcMain.handle('util:generate-thumbnails', async () => {
             generated++;
             done++;
             if (done % 100 === 0 || done === total) {
-              console.log(`[fossick] thumbnails: ${done}/${total} (${generated} generated, ${failed} failed)`);
+              log(`[fossick] thumbnails: ${done}/${total} (${generated} generated, ${failed} failed)`);
               if (!mainWindow.isDestroyed()) mainWindow.webContents.send('util:thumb-progress', { done, total, generated, failed });
             }
             return;
@@ -1186,15 +1188,15 @@ ipcMain.handle('util:generate-thumbnails', async () => {
           update.run(thumbPath, photo.id);
           generated++;
         } else {
-          console.log(`[thumb-ql] no output for ${photo.filename}, tmpOut contents: ${fs.readdirSync(tmpOut).join(', ')}`);
+          log(`[thumb-ql] no output for ${photo.filename}, tmpOut contents: ${fs.readdirSync(tmpOut).join(', ')}`);
           failed++;
         }
         try { fs.rmSync(tmpOut, { recursive: true }); } catch {}
-      } catch (err) { console.log(`[thumb-ql] ${photo.filename}: ${err.message}`); failed++; }
+      } catch (err) { log(`[thumb-ql] ${photo.filename}: ${err.message}`); failed++; }
 
     } else {
       // Non-macOS fallback: ffmpeg-static
-      console.log(`[thumb-ffmpeg] trying: ${photo.filename} ext=${ext}`);
+      log(`[thumb-ffmpeg] trying: ${photo.filename} ext=${ext}`);
       try {
         await execFileAsync(FFMPEG_BIN, [
           '-i', photo.file_path, '-frames:v', '1',
@@ -1209,7 +1211,7 @@ ipcMain.handle('util:generate-thumbnails', async () => {
 
     done++;
     if (done % 100 === 0 || done === total) {
-      console.log(`[fossick] thumbnails: ${done}/${total} (${generated} generated, ${failed} failed)`);
+      log(`[fossick] thumbnails: ${done}/${total} (${generated} generated, ${failed} failed)`);
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send('util:thumb-progress', { done, total, generated, failed });
       }
@@ -2138,7 +2140,7 @@ async function _geocodeTripNames(items) {
         name        = [local.city, local.country].filter(Boolean).join(', ');
         db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`)
           .run(key, JSON.stringify({ name, country, countryCode }));
-        console.log(`[fossick] geocoded (local): ${name}`);
+        log(`[fossick] geocoded (local): ${name}`);
       } else {
         // Fallback: Nominatim (rate-limited)
         try {
@@ -2154,7 +2156,7 @@ async function _geocodeTripNames(items) {
           }
           if (name) db.prepare(`INSERT OR REPLACE INTO settings VALUES (?, ?)`)
             .run(key, JSON.stringify({ name, country, countryCode }));
-          if (name) console.log(`[fossick] geocoded (nominatim): ${name}`);
+          if (name) log(`[fossick] geocoded (nominatim): ${name}`);
         } catch (err) {
           console.warn(`[fossick] geocode failed for ${item.lat},${item.lng}: ${err.message}`);
         }
@@ -2257,17 +2259,17 @@ ipcMain.handle('util:show-confirm-dialog', async (_event, { title, message, butt
 // Search a place name via Nominatim (for home zone modal)
 ipcMain.handle('trips:search-location', async (_event, { query }) => {
   if (!query || query.trim().length < 2) return { results: [] };
-  console.log(`[fossick] searchLocation: "${query}"`);
+  log(`[fossick] searchLocation: "${query}"`);
 
   // Primary: Photon (no rate limit, no API key)
   const photonResults = await _photonSearch(query);
   if (photonResults && photonResults.length > 0) {
-    console.log(`[fossick] searchLocation via Photon: ${photonResults.length} results`);
+    log(`[fossick] searchLocation via Photon: ${photonResults.length} results`);
     return { results: photonResults, source: 'photon' };
   }
 
   // Fallback: Nominatim (rate-limited)
-  console.log('[fossick] searchLocation: Photon failed, trying Nominatim…');
+  log('[fossick] searchLocation: Photon failed, trying Nominatim…');
   try {
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&accept-language=en`;
     const { ok, status, data } = await _nominatimFetch(url);
@@ -2275,7 +2277,7 @@ ipcMain.handle('trips:search-location', async (_event, { query }) => {
       console.error(`[fossick] searchLocation Nominatim status: ${status}`);
       return { results: [], error: `Search unavailable (HTTP ${status})` };
     }
-    console.log(`[fossick] searchLocation via Nominatim: ${data.length} results`);
+    log(`[fossick] searchLocation via Nominatim: ${data.length} results`);
     return {
       results: data.map(r => ({
         displayName: r.display_name,
@@ -2323,7 +2325,7 @@ ipcMain.handle('trips:fix-fallback-names', async () => {
     db.prepare(`DELETE FROM settings WHERE key = ?`).run(key4);
   }
 
-  console.log(`[fossick] Re-geocoding ${all.length} trips with missing/incomplete names…`);
+  log(`[fossick] Re-geocoding ${all.length} trips with missing/incomplete names…`);
   _geocodeTripNames(all).catch(err =>
     console.error('[fossick] fix-fallback-names error:', err.message)
   );
