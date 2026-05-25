@@ -29,8 +29,8 @@ test('no ReferenceErrors or TypeErrors on startup', async () => {
 // ── 2. Import page loads correctly ───────────────────────────────────────────
 test('import page shows correct content', async () => {
   // Eyebrow bar
-  await expect(page.locator('.import-eyebrow-bar')).toBeVisible();
-  await expect(page.locator('.import-eyebrow-bar')).toContainText('Fossick');
+  await expect(page.locator('.vhb')).toBeVisible();
+  await expect(page.locator('#btn-nav-import')).toContainText('Import Setting');
 
   // Headline
   await expect(page.locator('.import-title')).toBeVisible();
