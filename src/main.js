@@ -539,11 +539,9 @@ ipcMain.handle('process:start', (_event, { zipPaths, isResume = false }) => {
     fs.mkdirSync(extractTo, { recursive: true });
   }
 
-  // Licence check — get trial limit before spawning worker
-  const licenceRow = db.prepare("SELECT value FROM settings WHERE key = 'licence_key'").get();
-  const licensed   = !!licenceRow?.value;
-  const devMode    = process.env.FOSSICK_DEV === '1';
-  if (devMode) console.log('[dev] Trial limit disabled — running in dev mode');
+  // Licence check — always enforce TRIAL_LIMIT for now (Gumroad not yet active)
+  const devMode = process.env.FOSSICK_DEV === '1';
+  if (devMode) console.log('[dev] Dev mode — trial limit still enforced');
 
   // Save run state so we can resume if interrupted
   db.prepare("INSERT OR REPLACE INTO settings VALUES ('run_state', ?)").run(
@@ -559,7 +557,7 @@ ipcMain.handle('process:start', (_event, { zipPaths, isResume = false }) => {
 
       tempDir:         extractTo || '',
       dbPath:          db.name,
-      trialLimit:      (licensed || devMode) ? null : 100,  // null = unlimited
+      trialLimit:      TRIAL_LIMIT,  // always enforced until Gumroad activated
       thumbDir:        ensureThumbDir(),
       controlSab,      // SharedArrayBuffer for pause/resume/abort
     },
@@ -1531,7 +1529,7 @@ function _dateStamp() {
 }
 
 // ── Licence ───────────────────────────────────────────────────────────────────
-const TRIAL_LIMIT = 100;
+const TRIAL_LIMIT = 1000;
 
 // ── Albums ───────────────────────────────────────────────────────────────────────
 
@@ -2417,32 +2415,36 @@ ipcMain.handle('licence:activate', async (_event, { key }) => {
   if (!key || typeof key !== 'string') return { ok: false, error: 'No key provided' };
   const clean = key.trim().toUpperCase();
 
-  // Validate against Gumroad licence API
-  try {
-    const res = await fetch('https://api.gumroad.com/v2/licenses/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        product_id:   'fissick',   // replace with real Gumroad product permalink
-        license_key:  clean,
-        increment_uses_count: 'false',
-      }),
-    });
-    const data = await res.json();
+  // ── Gumroad licence verification — NOT YET ACTIVE ──────────────────────────
+  // Uncomment when ready to go live with paid licences.
+  //
+  // try {
+  //   const res = await fetch('https://api.gumroad.com/v2/licenses/verify', {
+  //     method: 'POST',
+  //     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  //     body: new URLSearchParams({
+  //       product_id:   'fissick',
+  //       license_key:  clean,
+  //       increment_uses_count: 'false',
+  //     }),
+  //   });
+  //   const data = await res.json();
+  //   if (data.success) {
+  //     db.prepare("INSERT OR REPLACE INTO settings VALUES ('licence_key', ?)").run(clean);
+  //     return { ok: true };
+  //   } else {
+  //     return { ok: false, error: data.message || 'Invalid licence key' };
+  //   }
+  // } catch (err) {
+  //   console.warn('[licence] Gumroad unreachable, accepting offline:', clean);
+  //   db.prepare("INSERT OR REPLACE INTO settings VALUES ('licence_key', ?)").run(clean);
+  //   return { ok: true, offline: true };
+  // }
+  // ── End Gumroad block ───────────────────────────────────────────────────────
 
-    if (data.success) {
-      db.prepare("INSERT OR REPLACE INTO settings VALUES ('licence_key', ?)").run(clean);
-      return { ok: true };
-    } else {
-      return { ok: false, error: data.message || 'Invalid licence key' };
-    }
-  } catch (err) {
-    // Network unavailable — accept the key offline (user can't fake a key format)
-    // In production, add format validation here (e.g. Gumroad keys are UUID format)
-    console.warn('[licence] Gumroad unreachable, accepting offline:', clean);
-    db.prepare("INSERT OR REPLACE INTO settings VALUES ('licence_key', ?)").run(clean);
-    return { ok: true, offline: true };
-  }
+  // Temporary: accept any non-empty key locally — Gumroad not yet active
+  db.prepare("INSERT OR REPLACE INTO settings VALUES ('licence_key', ?)").run(clean);
+  return { ok: true };
 });
 
 ipcMain.handle('licence:deactivate', () => {
