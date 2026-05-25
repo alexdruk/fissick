@@ -24,6 +24,13 @@ const TripDetailMap = (() => {
     const container = document.getElementById(containerId);
     if (!container || typeof L === 'undefined') return;
 
+    // Ensure container is visible and has dimensions before Leaflet reads its size.
+    // In production (no DevTools), the panel transition may not have completed yet.
+    container.style.minHeight = container.style.minHeight || '300px';
+    if (container.offsetHeight === 0) {
+      await new Promise(r => setTimeout(r, 120));
+    }
+
     // Double rAF — guarantees container is painted before Leaflet reads its size
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
@@ -121,7 +128,7 @@ const TripDetailMap = (() => {
       _map.setView([20, 0], 2);
     }
 
-    setTimeout(() => { try { _map.invalidateSize(); } catch {} }, 80);
+    setTimeout(() => { try { _map.invalidateSize(); } catch {} }, 250);
   }
 
   function destroy() {
