@@ -14,14 +14,14 @@
 ```
 Error: expect(locator).toBeVisible() failed
 
-Locator: locator('.import-eyebrow-bar')
+Locator: locator('#btn-select-folder')
 Expected: visible
 Timeout: 5000ms
 Error: element(s) not found
 
 Call log:
   - Expect "toBeVisible" with timeout 5000ms
-  - waiting for locator('.import-eyebrow-bar')
+  - waiting for locator('#btn-select-folder')
 
 ```
 
@@ -302,9 +302,8 @@ Call log:
   29  | // ── 2. Import page loads correctly ───────────────────────────────────────────
   30  | test('import page shows correct content', async () => {
   31  |   // Eyebrow bar
-> 32  |   await expect(page.locator('.import-eyebrow-bar')).toBeVisible();
-      |                                                     ^ Error: expect(locator).toBeVisible() failed
-  33  |   await expect(page.locator('.import-eyebrow-bar')).toContainText('Fossick');
+  32  |   await expect(page.locator('.vhb')).toBeVisible();
+  33  |   await expect(page.locator('#btn-nav-import')).toContainText('Import Setting');
   34  | 
   35  |   // Headline
   36  |   await expect(page.locator('.import-title')).toBeVisible();
@@ -312,7 +311,8 @@ Call log:
   38  | 
   39  |   // Both source buttons present
   40  |   await expect(page.locator('#btn-select-zips')).toBeVisible();
-  41  |   await expect(page.locator('#btn-select-folder')).toBeVisible();
+> 41  |   await expect(page.locator('#btn-select-folder')).toBeVisible();
+      |                                                    ^ Error: expect(locator).toBeVisible() failed
   42  | 
   43  |   // Process button hidden until source is selected
   44  |   await expect(page.locator('#btn-start')).toBeHidden();
@@ -404,4 +404,13 @@ Call log:
   130 |   await expect(page.locator('#btn-export-copy')).toBeAttached();
   131 |   await expect(page.locator('#btn-export-by-date')).toBeAttached();
   132 | 
+  133 |   // Export by trip should NOT exist (was removed)
+  134 |   await expect(page.locator('#btn-export-by-trip')).not.toBeAttached();
+  135 | 
+  136 |   // Back to import
+  137 |   await page.locator('#sb-import').click();
+  138 |   await page.waitForTimeout(500);
+  139 | });
+  140 | 
+  141 | // ── 10. No TripMaps.observe calls (removed dead code) ────────────────────────
 ```

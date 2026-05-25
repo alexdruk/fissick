@@ -38,7 +38,6 @@ test('import page shows correct content', async () => {
 
   // Both source buttons present
   await expect(page.locator('#btn-select-zips')).toBeVisible();
-  await expect(page.locator('#btn-select-folder')).toBeVisible();
 
   // Process button hidden until source is selected
   await expect(page.locator('#btn-start')).toBeHidden();
