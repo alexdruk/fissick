@@ -2188,10 +2188,11 @@ ipcMain.handle('trips:get-trips', (_event, { offset = 0, limit = 200, orderBy = 
   const order = SAFE.includes(orderBy) ? orderBy : 'start_ts ASC';
   const trips = db.prepare(`
     SELECT t.*,
-           p.thumbnail_path AS cover_thumbnail,
-           p.file_path      AS cover_file_path
+           COALESCE(p_thumb.thumbnail_path, p_any.thumbnail_path) AS cover_thumbnail,
+           COALESCE(p_thumb.file_path,      p_any.file_path)      AS cover_file_path
     FROM trips t
-    LEFT JOIN photos p ON p.trip_id = t.id AND p.thumbnail_path IS NOT NULL
+    LEFT JOIN photos p_thumb ON p_thumb.trip_id = t.id AND p_thumb.thumbnail_path IS NOT NULL
+    LEFT JOIN photos p_any   ON p_any.trip_id   = t.id
     GROUP BY t.id
     ORDER BY ${order} LIMIT ? OFFSET ?
   `).all(limit, offset);

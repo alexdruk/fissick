@@ -27,8 +27,11 @@ const TripDetailMap = (() => {
     let detail;
     try {
       detail = await window.tt.getTripDetail({ tripId, pointLimit: 2000 });
-    } catch { return; }
-    if (!detail) return;
+    } catch (err) {
+      console.error('[TripDetailMap] getTripDetail failed:', err);
+      return;
+    }
+    if (!detail) { console.error('[TripDetailMap] getTripDetail returned null for tripId', tripId); return; }
 
     const { points, photos } = detail;
 
@@ -45,10 +48,15 @@ const TripDetailMap = (() => {
     }
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-    _map = L.map(containerId, {
-      zoomControl:        true,
-      attributionControl: true,
-    });
+    try {
+      _map = L.map(containerId, {
+        zoomControl:        true,
+        attributionControl: true,
+      });
+    } catch (err) {
+      console.error('[TripDetailMap] L.map() failed:', err, 'container:', containerId, 'offsetHeight:', container.offsetHeight);
+      return;
+    }
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom:     19,
