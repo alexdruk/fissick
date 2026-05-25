@@ -8,6 +8,9 @@ const fs           = require('fs');
 const path         = require('path');
 const { execFile } = require('child_process');
 
+const devMode = process.env.FOSSICK_DEV === '1';
+const log = (...a) => { if (devMode) log(...a); };
+
 /**
  * Extract one or more Takeout ZIP files to a single destination directory.
  *
@@ -23,7 +26,7 @@ async function extractZips(zipPaths, destDir, onProgress) {
 
   for (const zipPath of zipPaths) {
     const zipSize = fs.statSync(zipPath).size;
-    console.log(`[zipExtractor] ${path.basename(zipPath)} — ${(zipSize / 1024).toFixed(1)} KB`);
+    log(`[zipExtractor] ${path.basename(zipPath)} — ${(zipSize / 1024).toFixed(1)} KB`);
 
     if (process.platform === 'darwin' || process.platform === 'linux') {
       await extractWithSystemUnzip(zipPath, destDir, (count) => {
@@ -59,7 +62,7 @@ function extractWithSystemUnzip(zipPath, destDir, onDone) {
     let zipEntryCount = 0;
     const done = (count) => {
       zipEntryCount = count || zipEntryCount;
-      console.log(`[zipExtractor] ${path.basename(zipPath)}: ~${zipEntryCount} entries extracted.`);
+      log(`[zipExtractor] ${path.basename(zipPath)}: ~${zipEntryCount} entries extracted.`);
       onDone(zipEntryCount);
       resolve(); // always resolve — never reject, never stop the queue
     };
@@ -135,7 +138,7 @@ async function extractWithUnzipper(zipPath, destDir, onEntry) {
     });
 
     stream.on('finish', async () => {
-      console.log(`[zipExtractor] unzipper: ${entryCount} entries, ${pending.length} file writes`);
+      log(`[zipExtractor] unzipper: ${entryCount} entries, ${pending.length} file writes`);
       try { await Promise.all(pending); resolve(); }
       catch (err) { reject(err); }
     });

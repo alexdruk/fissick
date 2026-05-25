@@ -14,6 +14,9 @@ const fs       = require('fs');
 const os       = require('os');
 const Database = require('better-sqlite3');
 
+const devMode = process.env.FOSSICK_DEV === '1';
+const log = (...a) => { if (devMode) log(...a); };
+
 // sharp is optional — gracefully absent if not yet installed
 let sharp = null;
 try { sharp = require('sharp'); } catch {}
@@ -40,7 +43,7 @@ function send(type, payload = {}) {
   parentPort.postMessage({ type, ...payload });
 }
 function status(phase, message) {
-  console.log(`[fossick] ${phase}: ${message}`);
+  log(`[fossick] ${phase}: ${message}`);
   send('status', { phase, message });
 }
 
@@ -59,11 +62,11 @@ function detectOptimalConcurrency(workPath) {
     workPath.includes('/old/') ||
     workPath.includes('/backup/')
   )) {
-    console.log('[fossick] Detected likely HDD path — using reduced concurrency (3) to avoid seek thrashing');
+    log('[fossick] Detected likely HDD path — using reduced concurrency (3) to avoid seek thrashing');
     return 3;
   }
   const full = Math.min(8, cpus);  // cap at 8, never oversubscribe
-  console.log(`[fossick] Using ${full} concurrent ExifTool processes`);
+  log(`[fossick] Using ${full} concurrent ExifTool processes`);
   return full;
 }
 
@@ -261,7 +264,7 @@ async function run() {
       const etaSecs  = rate > 0 ? Math.round((uniqueMedia.length - processed) / rate) : null;
       const percent  = Math.round((processed / uniqueMedia.length) * 100);
       const eta      = etaSecs ? ` — ETA ${Math.round(etaSecs / 60)}m` : '';
-      console.log(`[fossick] ${percent}% — ${processed.toLocaleString()} / ${uniqueMedia.length.toLocaleString()} photos${eta}`);
+      log(`[fossick] ${percent}% — ${processed.toLocaleString()} / ${uniqueMedia.length.toLocaleString()} photos${eta}`);
       send('progress', { processed: processed + alreadyDone.size, total: uniqueMedia.length, fixed, matched, failed, percent, etaSecs });
     }
 
@@ -375,7 +378,7 @@ async function run() {
       // Higher concurrency for CPU-bound thumbnail work vs I/O-bound ExifTool
       const cpuCount = os.cpus().length;
       const THUMB_CONCURRENCY = Math.min(cpuCount * 2, 24);
-      console.log(`[fossick] thumbnail concurrency: ${THUMB_CONCURRENCY} (EXIF was ${CONCURRENCY})`);
+      log(`[fossick] thumbnail concurrency: ${THUMB_CONCURRENCY} (EXIF was ${CONCURRENCY})`);
 
       // File type buckets
       const SHARP_ALL  = new Set(['jpg','jpeg','png','gif','webp','bmp','tiff','tif','avif','heic','heif']);
@@ -419,7 +422,7 @@ async function run() {
         const pct     = Math.round((thumbDone / thumbTotal) * 100);
         if (thumbDone % 500 === 0 || thumbDone === thumbTotal) {
           const eta = etaSecs ? ` — ETA ${Math.round(etaSecs / 60)}m` : '';
-          console.log(`[fossick] thumbnails ${pct}% — ${thumbDone.toLocaleString()} / ${thumbTotal.toLocaleString()}${eta}`);
+          log(`[fossick] thumbnails ${pct}% — ${thumbDone.toLocaleString()} / ${thumbTotal.toLocaleString()}${eta}`);
         }
         send('progress', { processed: thumbDone, total: thumbTotal, fixed, matched, failed, percent: pct, etaSecs, phase: 'thumbnails' });
       }
@@ -469,14 +472,14 @@ async function run() {
             ], { timeout: 20000 });
             try {
               if (fs.statSync(thumbPath).size > 100) { queueThumb(thumbPath, photo.id); done = true; }
-              else console.log(`[fossick] thumb empty (sips) ${photo.filename}`);
+              else log(`[fossick] thumb empty (sips) ${photo.filename}`);
             } catch {}
           } catch (err) {
-            console.log(`[fossick] thumb failed (sips) ${photo.filename}: ${err.message}`);
+            log(`[fossick] thumb failed (sips) ${photo.filename}: ${err.message}`);
           }
         }
 
-        if (!done) console.log(`[fossick] thumb unhandled ${photo.filename}`);
+        if (!done) log(`[fossick] thumb unhandled ${photo.filename}`);
         thumbDone++;
         reportProgress();
       });
@@ -516,7 +519,7 @@ async function run() {
               } catch {}
               try { fs.rmSync(tmpOut, { recursive: true }); } catch {}
             } catch (err) {
-              console.log(`[fossick] thumb failed (qlmanage) ${photo.filename}: ${err.message}`);
+              log(`[fossick] thumb failed (qlmanage) ${photo.filename}: ${err.message}`);
             }
           } else {
             try {
@@ -527,10 +530,10 @@ async function run() {
               ], { timeout: 20000 });
               try {
                 if (fs.statSync(thumbPath).size > 100) queueThumb(thumbPath, photo.id);
-                else console.log(`[fossick] thumb empty (ffmpeg) ${photo.filename}`);
+                else log(`[fossick] thumb empty (ffmpeg) ${photo.filename}`);
               } catch {}
             } catch (err) {
-              console.log(`[fossick] thumb failed (ffmpeg) ${photo.filename}: ${err.message}`);
+              log(`[fossick] thumb failed (ffmpeg) ${photo.filename}: ${err.message}`);
             }
           }
 
