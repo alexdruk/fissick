@@ -177,9 +177,6 @@ code{font-family:var(--mono);font-size:11.5px;background:var(--panel2);padding:1
   <p>Fossick may check for a schema update on launch — a small file on GitHub that describes the current Google Takeout sidecar format. This is entirely optional, user-visible (you'll see a prompt), and contains no personal information. It exists so that if Google changes their export format again, you can get the fix without downloading a new version of Fossick. You can decline this check; it doesn't affect any Fossick features.</p>
 </div>
 
-<h2>Licence verification</h2>
-<p>When you enter your Fossick licence key, the app makes a single verification call to Gumroad (the payment platform) to confirm the key is valid. This call sends only the licence key — no personal data, no photo information. After the key is verified, it's stored locally and no further network calls are made for licensing.</p>
-
 <h2>Open source dependencies</h2>
 <p>Fossick is built using open source components, including ExifTool (for writing photo metadata), Leaflet.js (for maps), and SQLite (for the local database). None of these components make network requests or collect data.</p>
 
