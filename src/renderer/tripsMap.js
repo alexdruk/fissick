@@ -24,16 +24,6 @@ const TripDetailMap = (() => {
     const container = document.getElementById(containerId);
     if (!container || typeof L === 'undefined') return;
 
-    // Ensure container is visible and has dimensions before Leaflet reads its size.
-    // In production (no DevTools), the panel transition may not have completed yet.
-    container.style.minHeight = container.style.minHeight || '300px';
-    if (container.offsetHeight === 0) {
-      await new Promise(r => setTimeout(r, 120));
-    }
-
-    // Double rAF — guarantees container is painted before Leaflet reads its size
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
     let detail;
     try {
       detail = await window.tt.getTripDetail({ tripId, pointLimit: 2000 });
@@ -41,6 +31,19 @@ const TripDetailMap = (() => {
     if (!detail) return;
 
     const { points, photos } = detail;
+
+    // Wait until the container is visible and has dimensions.
+    // _setTripsPanelState('detail') fires just before init() is called —
+    // the display:flex change may not have been painted yet.
+    // Poll up to 600ms, then proceed regardless.
+    {
+      let waited = 0;
+      while (container.offsetHeight === 0 && waited < 600) {
+        await new Promise(r => setTimeout(r, 30));
+        waited += 30;
+      }
+    }
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
     _map = L.map(containerId, {
       zoomControl:        true,
