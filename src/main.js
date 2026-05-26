@@ -47,7 +47,9 @@ let _lastNominatimReq    = 0;    // timestamp of last Nominatim request (rate-li
 
 // ── Offline reverse geocoder ──────────────────────────────────────────────────
 // local-reverse-geocoder uses a ~7MB GeoNames cities1000 dataset.
-// Downloaded once on first use, cached in node_modules/local-reverse-geocoder/geonames_dump/
+// Downloaded once on first use, cached in app.getPath('userData')/geocoder-data/.
+// NOTE: must NOT write to node_modules — that path is inside the asar archive
+// (or the read-only app bundle) and is not writable at runtime in a packaged app.
 let _localGeocoder       = null;
 let _localGeocoderReady  = false;
 let _localGeocoderInit   = null;  // Promise — only init once
@@ -57,7 +59,11 @@ function _initLocalGeocoder() {
   _localGeocoderInit = new Promise((resolve) => {
     try {
       const geocoder = require('local-reverse-geocoder');
-      geocoder.init({ load: { admin1: true, admin2: false, admin3And4: false, alternateNames: false } }, () => {
+      geocoder.init({
+        load: { admin1: true, admin2: false, admin3And4: false, alternateNames: false },
+        // Redirect data cache to userData — node_modules is not writable in a packaged app
+        dumpDirectory: path.join(app.getPath('userData'), 'geocoder-data'),
+      }, () => {
         _localGeocoder      = geocoder;
         _localGeocoderReady = true;
         log('[fossick] local-reverse-geocoder ready');

@@ -9,7 +9,7 @@ const path         = require('path');
 const { execFile } = require('child_process');
 
 const devMode = process.env.FOSSICK_DEV === '1';
-const log = (...a) => { if (devMode) log(...a); };
+const log = (...a) => { if (devMode) console.log(...a); };
 
 /**
  * Extract one or more Takeout ZIP files to a single destination directory.

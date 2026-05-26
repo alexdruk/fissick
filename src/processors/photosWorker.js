@@ -15,11 +15,11 @@ const os       = require('os');
 const Database = require('better-sqlite3');
 
 const devMode = process.env.FOSSICK_DEV === '1';
-const log = (...a) => { if (devMode) log(...a); };
+const log = (...a) => { if (devMode) console.log(...a); };
 
 // sharp is optional — gracefully absent if not yet installed
 let sharp = null;
-try { sharp = require('sharp'); } catch {}
+try { sharp = require('sharp'); } catch (e) { log(`[fossick] sharp load failed: ${e.message}`); }
 
 // ffmpeg for HEIC/video thumbnails — bundled via ffmpeg-static, no system install needed
 const { execFile }   = require('child_process');
@@ -458,13 +458,18 @@ async function run() {
               .toFile(thumbPath);
             queueThumb(thumbPath, photo.id);
             done = true;
-          } catch {
-            // Fall through to sips for HEIC without libheif
+          } catch (sharpErr) {
+            // Log so we can diagnose which files/formats sharp can't handle
+            log(`[fossick] thumb sharp failed ${photo.filename}: ${sharpErr.message}`);
+            // Fall through to sips
           }
         }
 
-        // Fallback: sips for HEIC on macOS when sharp doesn't have libheif
-        if (!done && (ext === 'heic' || ext === 'heif') && process.platform === 'darwin') {
+        // Fallback: sips for any image type on macOS when sharp fails or is absent.
+        // sips is built into macOS and handles JPG, PNG, HEIC, TIFF, GIF etc.
+        // Previously this only ran for HEIC — extended to cover all types since
+        // sharp can silently fail on CMYK JPEGs, corrupt headers, unusual encodings.
+        if (!done && process.platform === 'darwin') {
           try {
             await execFileAsync('sips', [
               '-s', 'format', 'jpeg', '-z', '280', '280',

@@ -1,11 +1,16 @@
 {
   "name": "fissick",
+  "productName": "Fissick",
   "version": "0.1.0",
   "description": "Fix and explore your Google Takeout archive",
   "main": "src/main.js",
   "scripts": {
     "start": "FOSSICK_DEV=1 electron .",
-    "test:smoke": "npx playwright test --config=playwright.config.js"
+    "test:smoke": "npx playwright test --config=playwright.config.js",
+    "build:icon": "iconutil -c icns assets/icon.iconset -o assets/icon.icns",
+    "build:mac:x64": "electron-forge make --platform darwin --arch x64",
+    "build:mac:arm64": "electron-forge make --platform darwin --arch arm64",
+    "build:mac": "npm run build:mac:x64 && npm run build:mac:arm64"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
@@ -16,6 +21,13 @@
     "unzipper": "^0.12.0"
   },
   "devDependencies": {
+    "@electron-forge/cli": "^7.0.0",
+    "@electron-forge/maker-dmg": "^7.0.0",
+    "@electron-forge/maker-squirrel": "^7.0.0",
+    "@electron-forge/maker-zip": "^7.0.0",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.0.0",
+    "@electron-forge/plugin-fuses": "^7.0.0",
+    "@electron/fuses": "^1.8.0",
     "@playwright/test": "^1.60.0",
     "electron": "^31.0.0"
   }
