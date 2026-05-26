@@ -1,62 +1,45 @@
-name: Build
+name: Build macOS DMGs
 
 on:
   push:
-    tags:
-      - 'v*'          # triggers on version tags: git tag v1.0.0 && git push --tags
-  workflow_dispatch:  # also allows manual trigger from GitHub UI
+    branches: [master]
+  workflow_dispatch:   # allows manual trigger from GitHub Actions tab
 
 jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest      # Apple Silicon runner
+          - arch: x64
+            runner: macos-13          # Intel runner
 
-  build-mac:
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
+    name: Build ${{ matrix.arch }} DMG
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Generate .icns icon
         run: iconutil -c icns assets/icon.iconset -o assets/icon.icns
 
-      - name: Build DMG
-        run: npm run make -- --platform darwin --arch x64
-        env:
-          NODE_ENV: production
+      - name: Build DMG (${{ matrix.arch }})
+        run: npm run build:mac:${{ matrix.arch }}
 
-      - name: Upload DMG
+      - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Fissick-mac
+          name: Fissick-${{ matrix.arch }}
           path: out/make/**/*.dmg
-
-  build-windows:
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Generate Windows icon
-        run: python3 scripts/make-ico.py
-
-      - name: Build Windows installer
-        run: npm run make -- --platform win32
-        env:
-          NODE_ENV: production
-
-      - name: Upload EXE
-        uses: actions/upload-artifact@v4
-        with:
-          name: Fissick-windows
-          path: out/make/**/*.exe
-
+          retention-days: 30
